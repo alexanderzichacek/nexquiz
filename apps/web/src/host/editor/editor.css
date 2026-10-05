@@ -1,0 +1,77 @@
+/* Form primitives shared by the editor panels (scoped to the editor root). */
+
+.editor .label {
+  display: block;
+  margin-bottom: var(--s-1);
+  font-size: var(--fs-editor-label);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.editor .input {
+  min-height: var(--btn-h);
+  width: 100%;
+  padding: 0 var(--s-3);
+  background: var(--bg);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-editor-option);
+}
+
+.editor textarea.input {
+  padding: var(--s-2) var(--s-3);
+}
+
+.editor .input:focus {
+  border-color: var(--primary);
+}
+
+.editor .input--error,
+.editor .input--error:focus {
+  border-color: var(--danger);
+}
+
+.editor .input--narrow {
+  width: var(--w-number-input);
+}
+
+.editor .icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--btn-h);
+  min-height: var(--btn-h);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-editor-question);
+  cursor: pointer;
+}
+
+.editor .icon-btn:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.editor .icon-btn--danger:hover:not(:disabled) {
+  color: var(--danger);
+}
+
+.editor .icon-btn:disabled {
+  opacity: var(--opacity-muted);
+  cursor: default;
+}
+
+.editor .hint {
+  color: var(--text-muted);
+  font-size: var(--fs-editor-label);
+}
+
+.editor .stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}

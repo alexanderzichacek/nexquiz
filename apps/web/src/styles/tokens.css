@@ -1,0 +1,201 @@
+/*
+ * Design tokens – DESIGN.md "Design tokeny".
+ * Components must use only these variables (no hard-coded colors or sizes).
+ */
+:root {
+  /* base */
+  --bg: #f7f7fb;
+  --surface: #ffffff;
+  --surface-2: #eef0f6;
+  --text: #15161c;
+  --text-muted: #5b6070;
+  --border: #dde0ea;
+  --primary: #5b3df5;
+  --primary-contrast: #ffffff;
+
+  /* states */
+  --success: #1f9d55;
+  --danger: #d6334a;
+  --warning: #e3a008; /* partially correct */
+  --info: #2a7de1;
+
+  /* answer option colors (sufficient contrast with white text) */
+  --opt-1: #e5484d; /* ▲ A */
+  --opt-2: #2f6fed; /* ◆ B */
+  --opt-3: #d39e00; /* ● C */
+  --opt-4: #1f9d55; /* ■ D */
+  --opt-5: #8e4ec6; /* ★ E */
+  --opt-6: #e5661a; /* ⬢ F */
+
+  /* typography */
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* spacing (4 px grid) */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 48px;
+  --s-8: 64px;
+
+  /* shape */
+  --radius-sm: 8px;
+  --radius: 14px;
+  --radius-lg: 22px;
+  --shadow: 0 2px 8px rgb(0 0 0 / 0.08);
+  --shadow-lg: 0 8px 28px rgb(0 0 0 / 0.16);
+
+  /* motion */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --t-fast: 120ms;
+  --t: 220ms;
+  --t-slow: 450ms;
+
+  /* ---- derived tokens (DESIGN.md "Typografia", "Prístupnosť", "Responzivita") ---- */
+
+  /* font sizes – player (mobile) */
+  --fs-player-question: 21px;
+  --fs-player-option: 17px;
+  --fs-player-pin: 32px;
+  --fs-player-timer: 18px;
+  --fs-body: 16px;
+  --fs-label: 13px;
+  --fs-small: 13px;
+
+  /* font sizes – host screen (projector) */
+  --fs-host-question: clamp(28px, 3.6vw, 64px);
+  --fs-host-option: clamp(20px, 2.2vw, 40px);
+  --fs-host-pin: clamp(64px, 9vw, 160px);
+  --fs-host-timer: clamp(32px, 4vw, 72px);
+  --fs-host-body: clamp(18px, 1.6vw, 28px);
+  --fs-host-label: clamp(14px, 1.2vw, 20px);
+
+  /* font sizes – editor */
+  --fs-editor-question: 18px;
+  --fs-editor-option: 15px;
+  --fs-editor-body: 14px;
+  --fs-editor-label: 12px;
+
+  /* landing */
+  --fs-pin-input: 28px;
+  --fs-wordmark: 24px;
+  --fs-claim: 20px;
+
+  /* weights */
+  --fw-regular: 400;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --fw-black: 800;
+
+  /* sizes */
+  --tap-min: 48px;
+  --btn-h: 44px;
+  --btn-h-player: 52px;
+  --input-h: 52px;
+  --focus-ring: 2px;
+  --ring-selected: 3px;
+  --border-w: 1px;
+
+  /* layout widths */
+  --w-landing: 960px;
+  --w-player: 480px;
+  --w-admin: 1200px;
+  --w-editor-list: 260px;
+  --w-editor-settings: 300px;
+  --w-menu: 200px;
+  --w-dialog: 480px;
+  --w-chip-input: 120px;
+  --w-number-input: 96px;
+  --h-hotspot-max: 60vh;
+  --h-preview-max: 80dvh;
+
+  /* misc derived */
+  --on-option: #ffffff; /* text / icons on --opt-n tiles */
+  --overlay: rgb(0 0 0 / 0.45); /* dialog backdrop */
+  --dot: 8px; /* error dot in the question list */
+  --icon: 20px; /* option shape icon */
+  --icon-lg: 28px;
+  --opacity-muted: 0.35; /* wrong / dimmed answer tiles */
+  --opacity-disabled: 0.5;
+
+  /* game screens (host stage + player) */
+  --qr-bg: #ffffff; /* QR card is always white (scanner readability) */
+  --qr-text: #15161c;
+  --qr-min: 30vh; /* QR min. 30 % of the screen height */
+  --marker: 28px; /* hotspot tap marker */
+  --marker-border: #ffffff;
+  --heat-dot: 10px; /* hotspot reveal dots */
+  --timer-ring: clamp(72px, 8vw, 140px);
+  --timer-stroke: 8px;
+  --timer-bar-h: 6px;
+  --progress-h: 6px;
+  --bar-chart-h: 38vh; /* reveal bar chart height */
+  --podium-h: 32vh; /* height of the 1st place column */
+  --stage-pad: clamp(16px, 2.5vw, 48px);
+  --stage-max: 1600px;
+  --eq-bar: clamp(6px, 0.8vw, 14px);
+  --hand-icon: 1em;
+  --t-stagger: 40ms; /* answer tiles stagger */
+  --t-countup: 600ms;
+  --t-flip: 500ms; /* leaderboard FLIP */
+  --t-podium-step: 900ms; /* pause between podium places */
+  --t-confetti: 2s;
+  --opacity-offline: 0.4; /* disconnected PlayerChip */
+  --qr-size: 40vh;
+  --chip-name-max: 12em;
+  --answered-min: 5em;
+  --audio-w: 560px;
+  --audio-btn: clamp(72px, 7vw, 128px);
+  --eq-h: clamp(48px, 8vh, 120px);
+  --stage-image-h: 34vh; /* question image on the host screen */
+  --stage-hotspot-h: 58vh; /* hotspot image / heatmap on the host screen */
+  --stage-list-w: 960px; /* order lists on the host screen */
+  --stage-board-w: 1100px; /* leaderboard / ranking width */
+  --stage-ranking-h: 30vh; /* scrollable full ranking under the podium */
+  --bar-col-max: 280px; /* reveal bar chart column */
+  --toggle-min: 7em; /* ✓ / ✗ toggle in TextAnswerGroups */
+  --lb-columns: 2.5em 1fr 5em 5em 3.5em; /* rank · nickname · score · delta · ▲▼ */
+  --rank-col: 2.5em;
+  --podium-col-max: 14em;
+  --podium-h-player: 22vh;
+  --h-player-image: 30vh;
+  --h-player-card: 420px; /* player card min. height on ≥ 600 px */
+  --result-icon: 64px;
+  --seconds-w: 3.5ch;
+
+  /* motion multiplier: 1 = full motion, 0 = reduced (fade only) */
+  --motion: 1;
+}
+
+/* dark theme (player follows the system, host game screen always dark) */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1020;
+    --surface: #1a1c33;
+    --surface-2: #24274a;
+    --text: #f4f5ff;
+    --text-muted: #a3a8c7;
+    --border: #2f3358;
+    --primary: #7c66ff;
+  }
+}
+
+:root[data-theme="dark"],
+.stage {
+  --bg: #0f1020;
+  --surface: #1a1c33;
+  --surface-2: #24274a;
+  --text: #f4f5ff;
+  --text-muted: #a3a8c7;
+  --border: #2f3358;
+  --primary: #7c66ff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion: 0;
+  }
+}

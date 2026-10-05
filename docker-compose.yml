@@ -1,0 +1,74 @@
+name: nexquiz
+
+services:
+  api:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://quiz:${POSTGRES_PASSWORD}@db:5432/quiz
+      REDIS_URL: redis://redis:6379
+      MEDIA_DIR: /data/media
+    volumes:
+      - media:/data/media
+    ports:
+      - "3000:3000"            # local access / LAN
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_started }
+    restart: unless-stopped
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: quiz
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: quiz
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quiz"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    restart: unless-stopped
+
+  # Quick tunnel – random *.trycloudflare.com URL, no account needed
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate --url http://api:3000
+    depends_on: [api]
+    profiles: [tunnel]
+
+  # Named tunnel – stable domain (e.g. quiz.yourdomain.sk)
+  tunnel-named:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    depends_on: [api]
+    profiles: [tunnel-named]
+    restart: unless-stopped
+
+  # End-to-end smoke test against the RUNNING api: docker compose --profile smoke run --rm smoke
+  # (no depends_on on purpose: `run` would otherwise recreate a running api, e.g. the dev variant)
+  smoke:
+    image: node:22-alpine
+    working_dir: /app
+    env_file: .env              # ADMIN_PASSWORD for the login
+    environment:
+      SMOKE_BASE_URL: http://api:3000
+    volumes:
+      - .:/app
+      - smoke_node_modules:/app/node_modules
+    command: sh -c "npm install --no-audit --no-fund --loglevel=error && npm run smoke"
+    profiles: [smoke]
+
+volumes:
+  pgdata:
+  redisdata:
+  media:
+  smoke_node_modules:
