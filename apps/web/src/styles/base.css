@@ -65,6 +65,35 @@ a {
   border: 0;
 }
 
+/*
+ * Text fit steps (components/choiceLayout.ts): long prompts / options scale
+ * down. Components use `font-size: calc(<token> * var(--fit, 1))`.
+ */
+.fit-l {
+  --fit: 1;
+}
+
+.fit-m {
+  --fit: var(--fit-m);
+}
+
+.fit-s {
+  --fit: var(--fit-s);
+}
+
+.fit-xs {
+  --fit: var(--fit-xs);
+}
+
+/* last resort for texts that still don't fit: ellipsis after `--lines` lines */
+.line-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--lines, 3);
+  line-clamp: var(--lines, 3);
+  overflow: hidden;
+}
+
 /* host game screen root – forces the dark theme */
 .stage {
   min-height: 100dvh;

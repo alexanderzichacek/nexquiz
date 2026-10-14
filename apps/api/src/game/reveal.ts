@@ -1,10 +1,12 @@
 import {
   fractionToNumber,
+  numberDistance,
   matchesNormalized,
   normalize,
   questionRevealEventSchema,
   type AnswerGroup,
   type FieldGroups,
+  type NumberGuess,
   type Question,
   type QuestionRevealEvent,
   type RevealStats,
@@ -56,6 +58,20 @@ function groupField(
   return { key: field.key, groups: out };
 }
 
+/** Guesses grouped by value, the nearest to the correct number first. */
+function numberGuesses(question: Extract<Question, { type: "number" }>, scored: ReadonlyMap<string, ScoredAnswer>): NumberGuess[] {
+  const groups = new Map<number, NumberGuess>();
+  for (const { answer, result } of scored.values()) {
+    if (answer?.type !== "number") continue;
+    const value = answer.payload.value;
+    const group = groups.get(value) ?? { value, count: 0, hit: result.correctness > 0 };
+    group.count++;
+    groups.set(value, group);
+  }
+  const distance = (g: NumberGuess): number => numberDistance(g.value, question.data.answer);
+  return [...groups.values()].sort((a, b) => distance(a) - distance(b) || a.value - b.value);
+}
+
 function buildStats(
   question: Question,
   questionIndex: number,
@@ -96,6 +112,8 @@ function buildStats(
         type: "music",
         fields: question.data.fields.map((f) => groupField(f, question, questionIndex, scored, overrides)),
       };
+    case "number":
+      return { type: "number", guesses: numberGuesses(question, scored) };
   }
 }
 

@@ -1,18 +1,25 @@
 import {
   DEFAULT_QUIZ_SETTINGS,
   LIMITS,
+  isPage,
+  PAGE_TYPE,
   type MediaRef,
+  type Page,
   type Question,
   type QuestionOf,
   type QuestionType,
+  type QuizItem,
 } from "@nexquiz/shared";
 import { sk } from "@/i18n/sk";
 import { localId, uuidV4 } from "@/lib/ids";
 
 /** Number of empty options a new `single` / `multi` question starts with. */
 export const NEW_CHOICE_OPTIONS = 4;
-/** Default clip of a new `music` question (seconds). */
+/** Default clip of a new `music` question and of a `text` question once audio is attached (seconds). */
 export const DEFAULT_CLIP = { start: 0, duration: 15 } as const;
+
+/** Tolerance a new `number` question starts with (used once the host switches to the tolerance mode). */
+export const DEFAULT_NUMBER_TOLERANCE = 1;
 
 export { DEFAULT_QUIZ_SETTINGS };
 
@@ -44,7 +51,19 @@ function build(type: QuestionType, base: Base): Question {
     case "hotspot":
       return { ...base, type, data: { targets: [] } };
     case "text":
-      return { ...base, type, data: { fields: [{ key: "answer", weight: 1, accepted: [] }], tolerance: "normal" } };
+      return {
+        ...base,
+        type,
+        data: {
+          fields: [{ key: "answer", weight: 1, accepted: [] }],
+          tolerance: "normal",
+          // Audio carried over from a `music` question needs its clip.
+          ...(base.media?.audioId ? { clip: { ...DEFAULT_CLIP } } : {}),
+        },
+      };
+    case "number":
+      // No answer yet (NaN → null in JSON): invalid until the host enters one, like the empty aliases of a text question.
+      return { ...base, type, data: { answer: Number.NaN, mode: "closest", tolerance: DEFAULT_NUMBER_TOLERANCE } };
     case "music":
       return {
         ...base,
@@ -71,11 +90,24 @@ export function createQuestion<T extends QuestionType>(type: T): QuestionOf<T> {
   });
 }
 
+/** A new, empty page (invalid until the host fills in a title, a description or an image). */
+export function createPage(): Page {
+  return { id: uuidV4(), type: PAGE_TYPE, title: "", description: "" };
+}
+
 /** Which media a question type uses. */
-export function mediaKindsFor(type: QuestionType): { image: boolean; audio: boolean; imageRequired: boolean } {
+export function mediaKindsFor(type: QuestionType): {
+  image: boolean;
+  audio: boolean;
+  video: boolean;
+  imageRequired: boolean;
+} {
   return {
     image: type !== "music",
-    audio: type === "music",
+    // `music` requires audio; `text` may have it (e.g. a song cut off before the lyrics to fill in).
+    audio: type === "music" || type === "text",
+    // Hotspot needs a still image to tap on, music has its audio clip.
+    video: type !== "music" && type !== "hotspot",
     imageRequired: type === "hotspot",
   };
 }
@@ -87,7 +119,8 @@ function mediaFor(type: QuestionType, media: MediaRef | undefined): MediaRef | u
   const next: MediaRef = {};
   if (kinds.image && media.imageId) next.imageId = media.imageId;
   if (kinds.audio && media.audioId) next.audioId = media.audioId;
-  return next.imageId || next.audioId ? next : undefined;
+  if (kinds.video && media.videoId) next.videoId = media.videoId;
+  return next.imageId || next.audioId || next.videoId ? next : undefined;
 }
 
 /**
@@ -117,9 +150,11 @@ export function hasTypeSpecificContent(question: Question): boolean {
     case "hotspot":
       return question.data.targets.length > 0;
     case "text":
-      return question.data.fields.some((f) => f.accepted.length > 0);
+      return question.data.fields.some((f) => f.accepted.length > 0) || question.media?.audioId !== undefined;
     case "music":
       return question.data.fields.some((f) => f.accepted.length > 0) || question.media?.audioId !== undefined;
+    case "number":
+      return Number.isFinite(question.data.answer);
   }
 }
 
@@ -128,10 +163,11 @@ export function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-/** Deep copy with a new question id and new option / item ids. */
-export function duplicateQuestion(question: Question): Question {
-  const copy = cloneJson(question);
+/** Deep copy with a new id (and new option / item ids of a question). */
+export function duplicateQuestion(item: QuizItem): QuizItem {
+  const copy = cloneJson(item);
   copy.id = uuidV4();
+  if (isPage(copy)) return copy;
   if (copy.type === "single") {
     const map = new Map(copy.data.options.map((o) => [o.id, localId()]));
     copy.data.options = copy.data.options.map((o) => ({ ...o, id: map.get(o.id) ?? localId() }));

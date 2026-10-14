@@ -12,12 +12,16 @@ import {
   type OkOrErrorAck,
 } from "./common.js";
 import { taggedAnswerSchema } from "./answer.js";
+import { avatarSchema, DEFAULT_AVATAR } from "./avatar.js";
 import {
   clipSchema,
   hotspotTargetSchema,
   LIMITS,
   mediaRefSchema,
+  numberModeSchema,
+  numberValueSchema,
   optionSchema,
+  pageMediaSchema,
   quizSettingsSchema,
 } from "./question.js";
 
@@ -41,6 +45,7 @@ export const WS_EVENTS = {
   // server → clients
   lobbyPlayers: "lobby:players",
   questionStart: "question:start",
+  pageShow: "page:show",
   questionProgress: "question:progress",
   questionEnd: "question:end",
   questionReveal: "question:reveal",
@@ -94,8 +99,11 @@ export type HostKickPayload = z.infer<typeof hostKickPayloadSchema>;
 export const playerJoinPayloadSchema = z.object({
   pin: pinSchema,
   nickname: nicknameSchema,
+  /** Optional on the wire; the server falls back to `DEFAULT_AVATAR`. */
+  avatar: avatarSchema.default(DEFAULT_AVATAR),
 });
-export type PlayerJoinPayload = z.infer<typeof playerJoinPayloadSchema>;
+/** Input shape (what a client sends): `avatar` may be omitted. */
+export type PlayerJoinPayload = z.input<typeof playerJoinPayloadSchema>;
 
 export const playerJoinAckSchema = z.union([
   z.object({ playerId: idSchema, token: playerTokenSchema }),
@@ -130,6 +138,7 @@ export type PlayerAnswerAck = z.infer<typeof playerAnswerAckSchema>;
 export const lobbyPlayerSchema = z.object({
   id: idSchema,
   nickname: z.string(),
+  avatar: avatarSchema,
   connected: z.boolean(),
 });
 export type LobbyPlayer = z.infer<typeof lobbyPlayerSchema>;
@@ -146,8 +155,12 @@ export const publicFieldSchema = z.object({
 export type PublicField = z.infer<typeof publicFieldSchema>;
 
 const questionStartBase = {
+  /** Position of the question among all items of the quiz (questions and pages). */
   index: indexSchema,
   total: z.number().int().positive(),
+  /** 1-based number of the question (pages are not counted) and the number of questions, for display. */
+  number: z.number().int().positive(),
+  count: z.number().int().positive(),
   prompt: z.string(),
   media: mediaRefSchema,
   timeLimit: z.number().int(),
@@ -166,7 +179,13 @@ export const questionStartEventSchema = z.discriminatedUnion("type", [
   /** `items` are shuffled (guaranteed not in the correct order). */
   z.object({ ...questionStartBase, type: z.literal("order"), items: z.array(optionSchema) }),
   z.object({ ...questionStartBase, type: z.literal("hotspot") }),
-  z.object({ ...questionStartBase, type: z.literal("text"), fields: z.array(publicFieldSchema) }),
+  z.object({
+    ...questionStartBase,
+    type: z.literal("text"),
+    fields: z.array(publicFieldSchema),
+    /** Present when the question has audio (the host screen plays it; players only learn that there is something to listen to). */
+    clip: clipSchema.optional(),
+  }),
   z.object({
     ...questionStartBase,
     type: z.literal("music"),
@@ -174,8 +193,24 @@ export const questionStartEventSchema = z.discriminatedUnion("type", [
     /** Needed by the host screen to play the clip; not a secret. */
     clip: clipSchema,
   }),
+  z.object({
+    ...questionStartBase,
+    type: z.literal("number"),
+    /** The judging mode and tolerance are shown as a hint; the correct number never leaves the server before reveal. */
+    mode: numberModeSchema,
+    tolerance: numberValueSchema,
+  }),
 ]);
 export type QuestionStartEvent = z.infer<typeof questionStartEventSchema>;
+
+/** `page:show` – a page between questions (host and players get the same content). */
+export const pageShowEventSchema = z.object({
+  index: indexSchema,
+  title: z.string(),
+  description: z.string(),
+  media: pageMediaSchema,
+});
+export type PageShowEvent = z.infer<typeof pageShowEventSchema>;
 
 export const questionProgressEventSchema = z.object({
   answered: z.number().int().nonnegative(),
@@ -202,11 +237,16 @@ export const correctAnswerSchema = z.discriminatedUnion("type", [
       z.object({ key: z.enum(["artist", "title"]), label: z.string().optional(), accepted: z.array(z.string()) }),
     ),
   }),
+  z.object({ type: z.literal("number"), answer: numberValueSchema, mode: numberModeSchema, tolerance: numberValueSchema }),
 ]);
 export type CorrectAnswer = z.infer<typeof correctAnswerSchema>;
 
 export const voteCountSchema = z.object({ optionId: localIdSchema, count: z.number().int().nonnegative() });
 export type VoteCount = z.infer<typeof voteCountSchema>;
+
+/** Guesses of a `number` question grouped by value (host reveal); `hit` = the guess scored. */
+export const numberGuessSchema = z.object({ value: numberValueSchema, count: z.number().int().positive(), hit: z.boolean() });
+export type NumberGuess = z.infer<typeof numberGuessSchema>;
 
 export const hotspotTapSchema = z.object({ x: z.number(), y: z.number(), hit: z.boolean() });
 export type HotspotTap = z.infer<typeof hotspotTapSchema>;
@@ -235,6 +275,8 @@ export const revealStatsSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("hotspot"), taps: z.array(hotspotTapSchema) }),
   z.object({ type: z.literal("text"), fields: z.array(fieldGroupsSchema) }),
   z.object({ type: z.literal("music"), fields: z.array(fieldGroupsSchema) }),
+  /** Sorted by distance from the correct number, the nearest first. */
+  z.object({ type: z.literal("number"), guesses: z.array(numberGuessSchema) }),
 ]);
 export type RevealStats = z.infer<typeof revealStatsSchema>;
 
@@ -263,6 +305,7 @@ export type PlayerResultEvent = z.infer<typeof playerResultEventSchema>;
 export const leaderboardEntrySchema = z.object({
   playerId: idSchema,
   nickname: z.string(),
+  avatar: avatarSchema,
   score: scoreSchema,
   /** Points gained in the last question. */
   delta: scoreSchema,
@@ -275,6 +318,8 @@ export type LeaderboardEntry = z.infer<typeof leaderboardEntrySchema>;
 export const leaderboardEventSchema = z.object({
   /** Index of the question after which the leaderboard is shown. */
   index: indexSchema,
+  /** 1-based number of that question (pages are not counted). */
+  number: z.number().int().positive(),
   top: z.array(leaderboardEntrySchema).max(10),
 });
 export type LeaderboardEvent = z.infer<typeof leaderboardEventSchema>;
@@ -282,6 +327,7 @@ export type LeaderboardEvent = z.infer<typeof leaderboardEventSchema>;
 export const rankingEntrySchema = z.object({
   playerId: idSchema,
   nickname: z.string(),
+  avatar: avatarSchema,
   score: scoreSchema,
   rank: z.number().int().positive(),
 });
@@ -301,6 +347,8 @@ const gameStateBase = {
   total: z.number().int().nonnegative(),
   serverNow: epochMsSchema,
   question: questionStartEventSchema.nullable(),
+  /** The page on screen (state `PAGE`). */
+  page: pageShowEventSchema.nullable(),
   leaderboard: leaderboardEventSchema.nullable(),
   finished: gameFinishedEventSchema.nullable(),
 };
@@ -324,6 +372,7 @@ export const playerGameStateSchema = z.object({
   role: z.literal("player"),
   playerId: idSchema,
   nickname: z.string(),
+  avatar: avatarSchema,
   score: scoreSchema,
   rank: z.number().int().positive().nullable(),
   hasAnswered: z.boolean(),
@@ -357,6 +406,7 @@ export interface HostClientToServerEvents {
 export interface HostServerToClientEvents {
   "lobby:players": (event: LobbyPlayersEvent) => void;
   "question:start": (event: QuestionStartEvent) => void;
+  "page:show": (event: PageShowEvent) => void;
   "question:progress": (event: QuestionProgressEvent) => void;
   "question:end": (event: QuestionEndEvent) => void;
   "question:reveal": (event: QuestionRevealEvent) => void;
@@ -374,6 +424,7 @@ export interface PlayClientToServerEvents {
 export interface PlayServerToClientEvents {
   "lobby:players": (event: LobbyPlayersEvent) => void;
   "question:start": (event: QuestionStartEvent) => void;
+  "page:show": (event: PageShowEvent) => void;
   "question:end": (event: QuestionEndEvent) => void;
   "player:result": (event: PlayerResultEvent) => void;
   leaderboard: (event: LeaderboardEvent) => void;

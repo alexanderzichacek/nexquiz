@@ -74,7 +74,7 @@ export type IdParams = z.infer<typeof idParamsSchema>;
 // Media
 // ---------------------------------------------------------------------------
 
-export const MEDIA_KINDS = ["image", "audio"] as const;
+export const MEDIA_KINDS = ["image", "audio", "video"] as const;
 export const mediaKindSchema = z.enum(MEDIA_KINDS);
 export type MediaKind = z.infer<typeof mediaKindSchema>;
 
@@ -91,6 +91,12 @@ export const AUDIO_MIME_TYPES = {
   "audio/mp4": "m4a",
   "audio/x-m4a": "m4a",
   "audio/m4a": "m4a",
+} as const;
+
+/** Videos are stored as uploaded (no transcoding). */
+export const VIDEO_MIME_TYPES = {
+  "video/mp4": "mp4",
+  "video/webm": "webm",
 } as const;
 
 export const IMAGE_MAX_DIMENSION = 1920;
@@ -120,6 +126,13 @@ export type CreateGameResponse = z.infer<typeof createGameResponseSchema>;
 
 export const pinParamsSchema = z.object({ pin: pinSchema });
 export type PinParams = z.infer<typeof pinParamsSchema>;
+
+/**
+ * GET /api/games/:pin/questions/:index/clip (player, `Authorization: Bearer {token}`):
+ * the audio clip of the running question, cut on the server and without tags.
+ */
+export const clipParamsSchema = z.object({ pin: pinSchema, index: z.coerce.number().int().min(0) });
+export type ClipParams = z.infer<typeof clipParamsSchema>;
 
 /** GET /api/games/:pin/exists (public). */
 export const gameExistsResponseSchema = z.object({ exists: z.boolean() });

@@ -77,10 +77,13 @@ const hits = computed(() => props.taps.filter((t) => t.hit).length);
   min-height: 0;
 }
 
+/* the image fills the free height of the stage (no fixed height → no page scroll) */
 .heatmap__img {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
-  height: var(--stage-hotspot-h);
+  height: 100%;
   object-fit: contain;
 }
 
@@ -123,6 +126,7 @@ const hits = computed(() => props.taps.filter((t) => t.hit).length);
   align-items: center;
   justify-content: center;
   gap: var(--s-5);
+  flex: none;
   font-size: var(--fs-host-body);
 }
 

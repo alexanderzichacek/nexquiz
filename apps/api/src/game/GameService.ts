@@ -1,18 +1,28 @@
 import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   ANSWER_GRACE_MS,
+  DEFAULT_AVATAR,
   fromHundredths,
   hostGameStateSchema,
   idSchema,
+  isPage,
+  isQuestion,
   nicknameKey,
   parseAnswerPayload,
   playerGameStateSchema,
   playerResultEventSchema,
+  questionCount,
+  questionNumber,
+  type Avatar,
+  type Clip,
   type CreateGameResponse,
   type GameStateName,
   type HostGameState,
   type HostOverridePayload,
+  type LeaderboardEvent,
   type LobbyPlayer,
+  type Page,
+  type PageShowEvent,
   type PlayerAnswerAck,
   type PlayerGameState,
   type PlayerResultEvent,
@@ -34,7 +44,7 @@ import {
 import { KeyedMutex } from "./mutex.js";
 import type { GameLogger, GameNotifier, GamePersistence, PersistedAnswer, QuizSource } from "./ports.js";
 import { buildReveal } from "./reveal.js";
-import { buildCorrectAnswer, buildQuestionStart, forPlayers } from "./sanitize.js";
+import { buildCorrectAnswer, buildPageShow, buildQuestionStart, forPlayers } from "./sanitize.js";
 import type { Scheduler } from "./scheduler.js";
 import { imageAspectOf, scoreQuestion, type ScoredAnswer } from "./scoring.js";
 import { cryptoRandomInt, presentationOrder, type RandomInt } from "./shuffle.js";
@@ -84,7 +94,7 @@ function playerIdFromToken(token: string): string | null {
 function lobbyList(players: ReadonlyMap<string, PlayerRecord>): LobbyPlayer[] {
   return [...players]
     .sort(([, a], [, b]) => a.joinedAt - b.joinedAt)
-    .map(([id, p]) => ({ id, nickname: p.nickname, connected: p.connected }));
+    .map(([id, p]) => ({ id, nickname: p.nickname, avatar: p.avatar, connected: p.connected }));
 }
 
 function onlyPlayers<T>(entries: ReadonlyMap<string, T>, players: ReadonlyMap<string, PlayerRecord>): Map<string, T> {
@@ -123,7 +133,8 @@ export class GameService {
   async createGame(quizId: string): Promise<CreateGameResponse> {
     const source = await this.deps.quizzes.loadForSnapshot(quizId);
     if (!source) throw new AppError("NOT_FOUND");
-    if (source.quiz.questions.length === 0) throw new AppError("INVALID");
+    // A quiz of pages only has nothing to play.
+    if (!source.quiz.questions.some(isQuestion)) throw new AppError("INVALID");
 
     const snapshot: QuizSnapshot = { ...source.quiz, images: source.images, takenAt: this.now() };
     const gameId = this.newId();
@@ -184,26 +195,25 @@ export class GameService {
     return this.locked(pin, (ctx) => this.hostState(ctx));
   }
 
-  /** `host:start`: LOBBY → QUESTION (needs ≥ 1 player). */
+  /** `host:start`: LOBBY → QUESTION / PAGE (the first item; needs ≥ 1 player). */
   start(pin: string): Promise<void> {
     return this.locked(pin, async (ctx) => {
-      // host:start is the LOBBY → QUESTION edge only (later questions are entered with host:next).
+      // host:start is the LOBBY → first item edge only (later items are entered with host:next).
       if (ctx.meta.state !== "LOBBY") throw new AppError("INVALID_TRANSITION");
       const players = await this.deps.store.getPlayers(pin);
       if (players.size === 0) throw new AppError("INVALID");
-      await this.transition(ctx, "QUESTION");
+      await this.transition(ctx, this.stateOfNextItem(ctx));
     });
   }
 
-  /** `host:next`: REVEAL / LEADERBOARD → LEADERBOARD / QUESTION / FINISHED. */
+  /** `host:next`: REVEAL / LEADERBOARD / PAGE → LEADERBOARD / QUESTION / PAGE / FINISHED. */
   next(pin: string): Promise<void> {
     return this.locked(pin, async (ctx) => {
-      const isLast = ctx.meta.currentIndex >= ctx.snapshot.questions.length - 1;
       let to: GameStateName;
       if (ctx.meta.state === "REVEAL") {
-        to = ctx.snapshot.settings.showLeaderboardAfterEach ? "LEADERBOARD" : isLast ? "FINISHED" : "QUESTION";
-      } else if (ctx.meta.state === "LEADERBOARD") {
-        to = isLast ? "FINISHED" : "QUESTION";
+        to = ctx.snapshot.settings.showLeaderboardAfterEach ? "LEADERBOARD" : this.stateOfNextItem(ctx);
+      } else if (ctx.meta.state === "LEADERBOARD" || ctx.meta.state === "PAGE") {
+        to = this.stateOfNextItem(ctx);
       } else {
         throw new AppError("INVALID_TRANSITION");
       }
@@ -270,7 +280,7 @@ export class GameService {
         this.deps.notifier.questionReveal(pin, buildReveal(question, idx, results, overrides));
       }
       if (meta.state === "LEADERBOARD") {
-        this.deps.notifier.leaderboard(pin, buildLeaderboard(meta.currentIndex, standings));
+        this.deps.notifier.leaderboard(pin, this.leaderboardOf(ctx, standings));
       }
       this.deps.log.info(
         { pin, gameId: meta.gameId, questionIndex: idx, fieldKey: payload.fieldKey, accept: payload.accept, affected: affected.length },
@@ -299,8 +309,8 @@ export class GameService {
   // Player intents
   // -------------------------------------------------------------------------
 
-  /** `player:join`: new player with a unique nickname; late join is allowed. */
-  join(pin: string, nickname: string): Promise<{ playerId: string; token: string }> {
+  /** `player:join`: new player with a unique nickname and an avatar; late join is allowed. */
+  join(pin: string, nickname: string, avatar: Avatar = DEFAULT_AVATAR): Promise<{ playerId: string; token: string }> {
     return this.mutex.run(pin, async () => {
       const meta = await this.deps.store.getMeta(pin);
       if (meta?.state === "FINISHED") throw new AppError("GAME_FINISHED");
@@ -316,6 +326,7 @@ export class GameService {
       const token = `${playerId}.${randomBytes(24).toString("base64url")}`;
       await this.deps.store.setPlayer(pin, playerId, {
         nickname: nick,
+        avatar,
         tokenHash: hashToken(token),
         connected: true,
         joinedAt: this.now(),
@@ -346,6 +357,27 @@ export class GameService {
       }
       return this.playerState(ctx, playerId);
     });
+  }
+
+  /**
+   * Audio clip of the running question for a player who plays sound on their
+   * own device. Only with a valid player token, only in `QUESTION` and only
+   * for the current question with audio – the clip never leaves the server
+   * earlier than the host screen plays it. Read only, no lock needed.
+   */
+  async playerClip(pin: string, token: string, index: number): Promise<{ audioId: string; clip: Clip }> {
+    const ctx = await this.tryLoadContext(pin);
+    if (!ctx) throw new AppError("PIN_NOT_FOUND");
+    const playerId = playerIdFromToken(token);
+    const player = playerId === null ? null : await this.deps.store.getPlayer(pin, playerId);
+    if (!player || !tokenMatches(token, player.tokenHash)) throw new AppError("INVALID_TOKEN");
+    const { meta } = ctx;
+    if (meta.state !== "QUESTION" || meta.currentIndex !== index) throw new AppError("NOT_FOUND");
+    const question = this.questionAt(ctx, index);
+    const audioId = question.media?.audioId;
+    const clip = question.type === "music" || question.type === "text" ? question.data.clip : undefined;
+    if (audioId === undefined || clip === undefined) throw new AppError("NOT_FOUND");
+    return { audioId, clip: { start: clip.start, duration: clip.duration } };
   }
 
   /** Complete player snapshot (`game:state`). */
@@ -415,8 +447,10 @@ export class GameService {
   private async transition(ctx: GameContext, to: GameStateName): Promise<void> {
     const from = ctx.meta.state;
     assertTransition(from, to);
-    if (to === "QUESTION" && ctx.meta.currentIndex + 1 >= ctx.snapshot.questions.length) {
-      throw new AppError("INVALID_TRANSITION");
+    // QUESTION / PAGE enter the next item, which has to exist and be of that kind.
+    if (to === "QUESTION" || to === "PAGE") {
+      const item = ctx.snapshot.questions[ctx.meta.currentIndex + 1];
+      if (!item || isPage(item) !== (to === "PAGE")) throw new AppError("INVALID_TRANSITION");
     }
     this.deps.log.info({ pin: ctx.pin, gameId: ctx.meta.gameId, from, to, index: ctx.meta.currentIndex }, "game transition");
     switch (to) {
@@ -424,6 +458,8 @@ export class GameService {
         return this.enterQuestion(ctx);
       case "REVEAL":
         return this.enterReveal(ctx);
+      case "PAGE":
+        return this.enterPage(ctx);
       case "LEADERBOARD":
         return this.enterLeaderboard(ctx);
       case "FINISHED":
@@ -440,30 +476,44 @@ export class GameService {
     const order = presentationOrder(question, ctx.snapshot.settings.shuffleOptions, this.random);
     if (order) await this.deps.store.setShuffle(pin, index, order);
 
-    const wasLobby = ctx.meta.status === "lobby";
     const startedAt = this.now();
     const deadline = startedAt + question.timeLimit * 1000;
-    await this.updateMeta(ctx, {
-      state: "QUESTION",
-      status: "running",
-      currentIndex: index,
-      questionStartedAt: startedAt,
-      deadline,
-    });
-    if (wasLobby) {
-      await this.persist(ctx, "markStarted", () => this.deps.persistence.markStarted(ctx.meta.gameId, new Date(startedAt)));
-    }
+    await this.enterItem(ctx, { state: "QUESTION", currentIndex: index, questionStartedAt: startedAt, deadline });
     this.scheduleDeadline(pin, index, deadline);
     const started = buildQuestionStart({
       question,
       index,
       total: ctx.snapshot.questions.length,
+      number: questionNumber(ctx.snapshot.questions, index),
+      count: questionCount(ctx.snapshot.questions),
       order,
       deadline,
       serverNow: this.now(),
     });
     this.deps.notifier.questionStart(pin, { host: started, players: forPlayers(started) });
     this.deps.notifier.questionProgress(pin, await this.progress(ctx));
+  }
+
+  /** A page has no timer, answers or scoring: the host moves on with `host:next`. */
+  private async enterPage(ctx: GameContext): Promise<void> {
+    const index = ctx.meta.currentIndex + 1;
+    const page = this.pageAt(ctx, index);
+    await this.enterItem(ctx, { state: "PAGE", currentIndex: index, questionStartedAt: this.now(), deadline: 0 });
+    this.deps.notifier.pageShow(ctx.pin, buildPageShow(page, index));
+  }
+
+  /** Common entry of a question / page: updates the meta and marks the game as running on the first item. */
+  private async enterItem(
+    ctx: GameContext,
+    patch: Pick<GameMeta, "state" | "currentIndex" | "questionStartedAt" | "deadline">,
+  ): Promise<void> {
+    const wasLobby = ctx.meta.status === "lobby";
+    await this.updateMeta(ctx, { ...patch, status: "running" });
+    if (wasLobby) {
+      await this.persist(ctx, "markStarted", () =>
+        this.deps.persistence.markStarted(ctx.meta.gameId, new Date(patch.questionStartedAt)),
+      );
+    }
   }
 
   private async enterReveal(ctx: GameContext): Promise<void> {
@@ -499,7 +549,7 @@ export class GameService {
   private async enterLeaderboard(ctx: GameContext): Promise<void> {
     await this.updateMeta(ctx, { state: "LEADERBOARD" });
     const standings = await this.standings(ctx);
-    this.deps.notifier.leaderboard(ctx.pin, buildLeaderboard(ctx.meta.currentIndex, standings));
+    this.deps.notifier.leaderboard(ctx.pin, this.leaderboardOf(ctx, standings));
   }
 
   private async enterFinished(ctx: GameContext): Promise<void> {
@@ -570,9 +620,28 @@ export class GameService {
   }
 
   private questionAt(ctx: GameContext, index: number): Question {
-    const question = ctx.snapshot.questions[index];
-    if (!question) throw new AppError("INVALID");
-    return question;
+    const item = ctx.snapshot.questions[index];
+    if (!item || isPage(item)) throw new AppError("INVALID");
+    return item;
+  }
+
+  private pageAt(ctx: GameContext, index: number): Page {
+    const item = ctx.snapshot.questions[index];
+    if (!item || !isPage(item)) throw new AppError("INVALID");
+    return item;
+  }
+
+  /** State entered by the next item: `QUESTION`, `PAGE` or `FINISHED` after the last one. */
+  private stateOfNextItem(ctx: GameContext): GameStateName {
+    const item = ctx.snapshot.questions[ctx.meta.currentIndex + 1];
+    if (!item) return "FINISHED";
+    return isPage(item) ? "PAGE" : "QUESTION";
+  }
+
+  /** Leaderboard after the current question; its number does not count pages. */
+  private leaderboardOf(ctx: GameContext, standings: readonly Standing[]): LeaderboardEvent {
+    const { currentIndex } = ctx.meta;
+    return buildLeaderboard(currentIndex, questionNumber(ctx.snapshot.questions, currentIndex), standings);
   }
 
   private scheduleDeadline(pin: string, index: number, deadline: number): void {
@@ -704,16 +773,26 @@ export class GameService {
   /** Current question as sent in `question:start` (sanitized), or null. */
   private async currentQuestion(ctx: GameContext): Promise<QuestionStartEvent | null> {
     const { meta } = ctx;
-    if (meta.currentIndex < 0 || meta.state === "LOBBY" || meta.state === "FINISHED") return null;
+    if (meta.currentIndex < 0 || meta.state === "LOBBY" || meta.state === "FINISHED" || meta.state === "PAGE") {
+      return null;
+    }
     const question = this.questionAt(ctx, meta.currentIndex);
     return buildQuestionStart({
       question,
       index: meta.currentIndex,
       total: ctx.snapshot.questions.length,
+      number: questionNumber(ctx.snapshot.questions, meta.currentIndex),
+      count: questionCount(ctx.snapshot.questions),
       order: await this.deps.store.getShuffle(ctx.pin, meta.currentIndex),
       deadline: meta.deadline,
       serverNow: this.now(),
     });
+  }
+
+  /** Current page as sent in `page:show`, or null outside the `PAGE` state. */
+  private currentPage(ctx: GameContext): PageShowEvent | null {
+    const { meta } = ctx;
+    return meta.state === "PAGE" ? buildPageShow(this.pageAt(ctx, meta.currentIndex), meta.currentIndex) : null;
   }
 
   /** Scores of the current question recomputed from stored answers + results (deterministic). */
@@ -761,9 +840,10 @@ export class GameService {
       serverNow: this.now(),
       players: lobbyList(players),
       question: await this.currentQuestion(ctx),
+      page: this.currentPage(ctx),
       progress: meta.state === "QUESTION" ? await this.progress(ctx) : null,
       reveal,
-      leaderboard: meta.state === "LEADERBOARD" ? buildLeaderboard(meta.currentIndex, standings) : null,
+      leaderboard: meta.state === "LEADERBOARD" ? this.leaderboardOf(ctx, standings) : null,
       finished: meta.state === "FINISHED" ? buildFinished(standings) : null,
     } satisfies HostGameState);
   }
@@ -788,12 +868,14 @@ export class GameService {
       pin: ctx.pin,
       playerId,
       nickname: player.nickname,
+      avatar: player.avatar,
       state: meta.state,
       currentIndex: meta.currentIndex,
       total: snapshot.questions.length,
       serverNow: this.now(),
       question: forPlayers(await this.currentQuestion(ctx)),
-      leaderboard: meta.state === "LEADERBOARD" ? buildLeaderboard(meta.currentIndex, standings) : null,
+      page: this.currentPage(ctx),
+      leaderboard: meta.state === "LEADERBOARD" ? this.leaderboardOf(ctx, standings) : null,
       finished: meta.state === "FINISHED" ? buildFinished(standings) : null,
       score: fromHundredths(standing.scoreHundredths),
       rank: meta.state === "LOBBY" ? null : standing.rank,

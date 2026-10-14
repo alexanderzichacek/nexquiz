@@ -18,7 +18,10 @@ export interface RealtimeDeps {
   log: GameLogger;
   /** When given, the Socket.IO Redis adapter is attached (pub/sub duplicates of this client). */
   redis?: Redis;
+  /** `player:join` per IP + PIN (default `JOIN_LIMIT`). */
   joinLimiter?: FixedWindowLimiter;
+  /** `player:join` misses (unknown PIN) per IP (default `JOIN_MISS_LIMIT`). */
+  joinMissLimiter?: FixedWindowLimiter;
 }
 
 export interface Realtime {
@@ -48,6 +51,7 @@ export function attachRealtime(server: HttpServer, deps: RealtimeDeps): Realtime
     log: deps.log,
     isClosing: () => closing,
     ...(deps.joinLimiter ? { joinLimiter: deps.joinLimiter } : {}),
+    ...(deps.joinMissLimiter ? { joinMissLimiter: deps.joinMissLimiter } : {}),
   });
   deps.notifier.bind(host, play);
 

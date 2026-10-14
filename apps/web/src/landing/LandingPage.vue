@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { gameExistsResponseSchema, loginResponseSchema, normalizePinInput, PIN_LENGTH } from "@nexquiz/shared";
+import { loginResponseSchema, normalizePinInput, PIN_LENGTH } from "@nexquiz/shared";
 import { computed, onMounted, ref, useTemplateRef } from "vue";
 import { useRouter } from "vue-router";
 import AppFooter from "@/components/AppFooter.vue";
-import AppHeader from "@/components/AppHeader.vue";
+import AppLogo from "@/components/AppLogo.vue";
 import BaseButton from "@/components/BaseButton.vue";
 import { sk } from "@/i18n/sk";
 import { ApiError, apiRequest } from "@/lib/api";
+import { checkPin, pinCheckMessage, rememberConfirmedPin } from "@/lib/pinCheck";
 import { useAuthStore } from "@/stores/auth";
 
 const router = useRouter();
@@ -35,14 +36,15 @@ async function join(): Promise<void> {
   joining.value = true;
   pinError.value = null;
   try {
-    const res = await apiRequest(`/api/games/${pinDigits.value}/exists`, gameExistsResponseSchema);
-    if (res.exists) {
-      await router.push({ name: "play", query: { pin: pinDigits.value } });
+    const pin = pinDigits.value;
+    const result = await checkPin(pin);
+    if (result === "exists") {
+      // /play trusts this check and does not call `/exists` again.
+      rememberConfirmedPin(pin);
+      await router.push({ name: "play", query: { pin } });
     } else {
-      pinError.value = sk.errors.pinNotFound;
+      pinError.value = pinCheckMessage(result);
     }
-  } catch (err) {
-    pinError.value = err instanceof ApiError && err.code === "RATE_LIMITED" ? sk.errors.rateLimited : sk.errors.pinNotFound;
   } finally {
     joining.value = false;
   }
@@ -80,14 +82,12 @@ onMounted(() => {
 
 <template>
   <div class="landing">
-    <AppHeader home-to="/" />
-
     <main class="landing__main">
-      <p class="landing__claim">{{ sk.landing.claim }}</p>
+      <h1 class="landing__logo"><AppLogo /></h1>
 
       <div class="landing__cards">
         <section class="card card--primary" aria-labelledby="join-title">
-          <h1 id="join-title" class="card__title">{{ sk.landing.joinTitle }}</h1>
+          <h2 id="join-title" class="card__title">{{ sk.landing.joinTitle }}</h2>
           <form class="card__form" novalidate @submit.prevent="join">
             <label class="field">
               <span class="field__label">{{ sk.landing.pinLabel }}</span>
@@ -164,27 +164,27 @@ onMounted(() => {
   padding-right: max(var(--s-4), env(safe-area-inset-right));
 }
 
-.landing__claim {
-  font-size: var(--fs-claim);
-  font-weight: var(--fw-semibold);
-  color: var(--text-muted);
-  margin-bottom: var(--s-6);
+.landing__logo {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--s-5);
 }
 
+/* `minmax(0, 1fr)`: the inputs must not widen the column past a narrow phone screen */
 .landing__cards {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--s-5);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-4);
 }
 
 @media (min-width: 720px) {
-  .landing__claim {
-    text-align: center;
+  .landing__logo {
     margin: var(--s-6) 0 var(--s-7);
   }
 
   .landing__cards {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s-5);
   }
 }
 
@@ -193,7 +193,13 @@ onMounted(() => {
   border: var(--border-w) solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
-  padding: var(--s-5);
+  padding: var(--s-4);
+}
+
+@media (min-width: 720px) {
+  .card {
+    padding: var(--s-5);
+  }
 }
 
 .card--primary {
@@ -232,6 +238,8 @@ onMounted(() => {
 }
 
 .field__input {
+  width: 100%;
+  min-width: 0;
   min-height: var(--input-h);
   padding: 0 var(--s-4);
   background: var(--bg);

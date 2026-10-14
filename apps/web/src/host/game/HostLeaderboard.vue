@@ -10,12 +10,15 @@ import LeaderboardRow from "./LeaderboardRow.vue";
 /**
  * Top 10 after a question. Rows start in the previous order and then move
  * to their new positions (FLIP via `<TransitionGroup>` move transitions).
+ * The rows share the stage height (10 slots), so the board never scrolls.
  */
 const props = defineProps<{ leaderboard: LeaderboardEvent; advancing: boolean }>();
 defineEmits<{ next: [] }>();
 
 /** Pause before the rows move, so the previous order is visible first. */
 const REORDER_DELAY_MS = 700;
+/** Rows are sized for at least this many players, so a short board keeps the normal row height. */
+const MIN_SLOTS = 8;
 
 const rows = ref(prefersReducedMotion() ? byRank(props.leaderboard.top) : byPreviousRank(props.leaderboard.top));
 let timer: number | null = null;
@@ -35,9 +38,9 @@ watch(
 
 <template>
   <section class="board">
-    <h1 class="board__title">{{ format(sk.game.leaderboardTitle, { n: leaderboard.index + 1 }) }}</h1>
+    <h1 class="board__title">{{ format(sk.game.leaderboardTitle, { n: leaderboard.number }) }}</h1>
     <p v-if="rows.length === 0" class="board__empty">{{ sk.game.noPlayersRanking }}</p>
-    <TransitionGroup v-else tag="ol" name="flip" class="board__list">
+    <TransitionGroup v-else tag="ol" name="flip" class="board__list" :style="{ '--slots': Math.max(rows.length, MIN_SLOTS) }">
       <li v-for="entry in rows" :key="entry.playerId">
         <LeaderboardRow :entry="entry" />
       </li>
@@ -54,7 +57,7 @@ watch(
 .board {
   display: flex;
   flex-direction: column;
-  gap: var(--s-5);
+  gap: var(--stage-gap);
   flex: 1;
   min-height: 0;
   width: min(100%, var(--stage-board-w));
@@ -62,6 +65,7 @@ watch(
 }
 
 .board__title {
+  flex: none;
   font-size: var(--fs-host-question);
   font-weight: var(--fw-bold);
 }
@@ -70,9 +74,10 @@ watch(
   color: var(--text-muted);
 }
 
+/* `--slots` equal rows (top 10) that shrink with the stage height */
 .board__list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: repeat(var(--slots), minmax(0, 1fr));
   gap: var(--s-2);
   margin: 0;
   padding: 0;
@@ -81,11 +86,24 @@ watch(
   min-height: 0;
 }
 
+.board__list > li {
+  display: flex;
+  min-height: 0;
+}
+
+.board__list :deep(.row) {
+  flex: 1;
+  min-height: 0;
+  padding-block: 0;
+  font-size: var(--fs-host-row);
+}
+
 .flip-move {
   transition: transform calc(var(--t-flip) * var(--motion)) var(--ease);
 }
 
 .board__footer {
+  flex: none;
   display: flex;
   justify-content: flex-end;
 }

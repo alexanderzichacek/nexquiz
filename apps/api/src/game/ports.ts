@@ -3,6 +3,7 @@ import type {
   ImageSize,
   LeaderboardEvent,
   LobbyPlayersEvent,
+  PageShowEvent,
   PlayerResultEvent,
   QuestionEndEvent,
   QuestionProgressEvent,
@@ -18,6 +19,8 @@ export interface GameNotifier {
   lobbyPlayers(pin: string, event: LobbyPlayersEvent): void;
   /** Host gets `host`, players get `players` (without `media.audioId`, see `forPlayers`). */
   questionStart(pin: string, event: { host: QuestionStartEvent; players: QuestionStartEvent }): void;
+  /** Host + all players. */
+  pageShow(pin: string, event: PageShowEvent): void;
   /** Host only. */
   questionProgress(pin: string, event: QuestionProgressEvent): void;
   /** Host + all players. */
@@ -37,6 +40,7 @@ export interface GameNotifier {
 export const noopNotifier: GameNotifier = {
   lobbyPlayers: () => undefined,
   questionStart: () => undefined,
+  pageShow: () => undefined,
   questionProgress: () => undefined,
   questionEnd: () => undefined,
   questionReveal: () => undefined,

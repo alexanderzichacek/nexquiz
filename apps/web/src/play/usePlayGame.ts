@@ -1,18 +1,19 @@
 import {
-  gameExistsResponseSchema,
   pinSchema,
   type AnswerPayload,
+  type Avatar,
   type ErrorCode,
   type PlayHandshakeAuth,
 } from "@nexquiz/shared";
 import { onBeforeUnmount, ref, shallowRef } from "vue";
-import { apiRequest } from "@/lib/api";
+import { checkPin, pinCheckMessage, takeConfirmedPin } from "@/lib/pinCheck";
 import { clearToken, loadToken, saveToken } from "@/lib/playerToken";
 import { ACK_TIMEOUT_MS, connectPlay, type PlayClientSocket } from "@/lib/socket";
 import {
   fromPlayerState,
   onFinished,
   onLeaderboard,
+  onPageShow,
   onPlayerResult,
   onQuestionEnd,
   onQuestionStart,
@@ -22,9 +23,11 @@ import {
 
 /**
  * Player screen phases: PIN check → nickname → in game. `invalid` = unknown
- * or inactive PIN, `kicked` = removed by the host.
+ * or inactive PIN, `checkFailed` = the PIN check was rate limited or the
+ * server was unreachable (`checkError`, the player can retry), `kicked` =
+ * removed by the host.
  */
-export type PlayPhase = "checking" | "invalid" | "nickname" | "game" | "kicked";
+export type PlayPhase = "checking" | "invalid" | "checkFailed" | "nickname" | "game" | "kicked";
 
 export type JoinError = "NICK_TAKEN" | "GAME_FINISHED" | "RATE_LIMITED" | "INVALID" | "NETWORK";
 
@@ -44,6 +47,8 @@ export function usePlayGame(pin: string) {
   const connected = ref(false);
   /** The socket was connected at least once (no badge before the first connect). */
   const everConnected = ref(false);
+  /** Message of the `checkFailed` phase. */
+  const checkError = ref<string | null>(null);
 
   let socket: PlayClientSocket | null = null;
 
@@ -56,13 +61,24 @@ export function usePlayGame(pin: string) {
     phase.value = "game";
   }
 
-  async function pinExists(): Promise<boolean> {
-    try {
-      const res = await apiRequest(`/api/games/${pin}/exists`, gameExistsResponseSchema);
-      return res.exists;
-    } catch {
-      return false;
+  /**
+   * `/exists` → nickname step, `invalid` only when the game really does not
+   * exist; a 429 / network error → `checkFailed` with a retry. Returns true
+   * when the game exists.
+   */
+  async function checkGame(): Promise<boolean> {
+    const result = await checkPin(pin);
+    if (result === "exists") {
+      phase.value = "nickname";
+      return true;
     }
+    if (result === "missing") {
+      phase.value = "invalid";
+    } else {
+      checkError.value = pinCheckMessage(result);
+      phase.value = "checkFailed";
+    }
+    return false;
   }
 
   /** Rejoin failed (unknown / kicked token): forget it and fall back to the nickname step. */
@@ -72,7 +88,7 @@ export function usePlayGame(pin: string) {
       phase.value = "invalid";
       return;
     }
-    phase.value = (await pinExists()) ? "nickname" : "invalid";
+    await checkGame();
   }
 
   async function rejoin(token: string): Promise<void> {
@@ -117,6 +133,7 @@ export function usePlayGame(pin: string) {
       const localNow = Date.now();
       apply((v) => onQuestionStart(v, e, localNow));
     });
+    s.on("page:show", (e) => apply((v) => onPageShow(v, e)));
     s.on("question:end", (e) => apply((v) => onQuestionEnd(v, e)));
     s.on("player:result", (e) => apply((v) => onPlayerResult(v, e)));
     s.on("leaderboard", (e) => apply((v) => onLeaderboard(v, e)));
@@ -138,20 +155,23 @@ export function usePlayGame(pin: string) {
       connect();
       return;
     }
-    if (!(await pinExists())) {
-      phase.value = "invalid";
+    // Coming from the landing page, which has just confirmed the PIN: no second `/exists`.
+    if (takeConfirmedPin(pin)) {
+      phase.value = "nickname";
+      connect();
       return;
     }
-    phase.value = "nickname";
-    connect();
+    phase.value = "checking";
+    checkError.value = null;
+    if (await checkGame()) connect();
   }
 
   /** `player:join`; on success the server sends `game:state`. Returns an error code or null. */
-  async function join(nickname: string): Promise<JoinError | null> {
+  async function join(nickname: string, avatar: Avatar): Promise<JoinError | null> {
     const s = socket;
     if (!s || !s.connected) return "NETWORK";
     try {
-      const ack = await s.timeout(ACK_TIMEOUT_MS).emitWithAck("player:join", { pin, nickname });
+      const ack = await s.timeout(ACK_TIMEOUT_MS).emitWithAck("player:join", { pin, nickname, avatar });
       if ("error" in ack) {
         if (ack.error === "PIN_NOT_FOUND") {
           phase.value = "invalid";
@@ -193,7 +213,7 @@ export function usePlayGame(pin: string) {
     socket = null;
   });
 
-  return { phase, view, connected, everConnected, start, join, answer };
+  return { phase, view, connected, everConnected, checkError, start, join, answer };
 }
 
 export type PlayGame = ReturnType<typeof usePlayGame>;

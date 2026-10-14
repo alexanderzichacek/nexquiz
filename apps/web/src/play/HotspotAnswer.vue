@@ -9,7 +9,8 @@ import SubmitBar from "./SubmitBar.vue";
 /**
  * `hotspot`: a tap places a 28 px marker that can be dragged before
  * „Odoslať“. Coordinates are normalized (0–1) to the DISPLAYED image under
- * `object-fit: contain` (taps in the letterbox are ignored).
+ * `object-fit: contain` (taps in the letterbox are ignored). The image takes
+ * the free height of the screen (no fixed height, so the page never scrolls).
  */
 const props = defineProps<{ imageId: string; locked: boolean }>();
 const emit = defineEmits<{ submit: [point: UnitPoint] }>();
@@ -77,44 +78,59 @@ function submit(): void {
 </script>
 
 <template>
-  <p class="hotspot__hint">{{ sk.play.hotspotHint }}</p>
-  <div
-    class="hotspot"
-    @pointerdown="onPointerDown"
-    @pointermove="onPointerMove"
-    @pointerup="onPointerUp"
-    @pointercancel="onPointerUp"
-  >
-    <img ref="img" :src="mediaUrl(imageId)" :alt="sk.play.hotspotImage" class="hotspot__img" draggable="false" />
-    <button
-      v-if="marker"
-      type="button"
-      class="hotspot__marker"
-      :aria-label="sk.play.hotspotMarker"
-      :style="{ left: `${marker.left}px`, top: `${marker.top}px` }"
-      :disabled="locked"
-      @keydown="onMarkerKey"
-    ></button>
+  <div class="hotspot-answer">
+    <p class="hotspot__hint">{{ sk.play.hotspotHint }}</p>
+    <div
+      class="hotspot"
+      @pointerdown="onPointerDown"
+      @pointermove="onPointerMove"
+      @pointerup="onPointerUp"
+      @pointercancel="onPointerUp"
+    >
+      <img ref="img" :src="mediaUrl(imageId)" :alt="sk.play.hotspotImage" class="hotspot__img" draggable="false" />
+      <button
+        v-if="marker"
+        type="button"
+        class="hotspot__marker"
+        :aria-label="sk.play.hotspotMarker"
+        :style="{ left: `${marker.left}px`, top: `${marker.top}px` }"
+        :disabled="locked"
+        @keydown="onMarkerKey"
+      ></button>
+    </div>
+    <SubmitBar :disabled="locked || !point" @submit="submit" />
   </div>
-  <SubmitBar :disabled="locked || !point" @submit="submit" />
 </template>
 
 <style scoped>
+.hotspot-answer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  flex: 1;
+  min-height: 0;
+}
+
 .hotspot__hint {
+  flex: none;
   color: var(--text-muted);
   font-size: var(--fs-small);
 }
 
 .hotspot {
   position: relative;
+  flex: 1 1 0;
   width: 100%;
+  min-height: 0;
   touch-action: none;
 }
 
 .hotspot__img {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
-  height: var(--h-hotspot-max);
+  height: 100%;
   object-fit: contain;
   border-radius: var(--radius-sm);
   user-select: none;

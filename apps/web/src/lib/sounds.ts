@@ -1,10 +1,13 @@
 /**
- * Host screen sounds (DESIGN.md "Pohyb a zvuk"), synthesized with WebAudio –
- * no external audio assets. Only the host plays sounds: optional lobby loop,
- * tick in the last 5 s, gong at the end of a question, fanfare on the podium.
+ * Game sounds (DESIGN.md "Pohyb a zvuk"), synthesized with WebAudio – no
+ * external audio assets: optional lobby loop, tick in the last 5 s, gong at
+ * the end of a question, fanfare on the podium. The host screen plays them
+ * always; a player only after turning sound on for their own device, who also
+ * plays the question's audio clip through `decode()` + `playBuffer()`.
  *
  * Browsers block audio until a user gesture (autoplay policy); `unlock()` is
- * called from the „Spustiť“ button and the music toggle.
+ * called from the „Spustiť“ button and the music toggle on the host, from the
+ * sound switch and any tap on the player.
  */
 
 /** Master volume of all effects. */
@@ -25,33 +28,82 @@ const SCHEDULER_MS = 200;
 
 type Wave = OscillatorType;
 
+/** `navigator.audioSession` (Safari 16.4+), not in the TypeScript DOM types yet. */
+interface AudioSessionNavigator {
+  audioSession?: { type: string };
+}
+
 export class StageAudio {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private loopTimer: number | null = null;
   private loopNextAt = 0;
   private loopStep = 0;
+  private stateListener: ((unlocked: boolean) => void) | null = null;
 
   /** True once the audio context runs (after a user gesture). */
   get unlocked(): boolean {
     return this.ctx?.state === "running";
   }
 
+  /** Called whenever the context starts or stops running (e.g. unlocked by a tap, suspended by the OS). */
+  onStateChange(listener: ((unlocked: boolean) => void) | null): void {
+    this.stateListener = listener;
+  }
+
   /** Creates / resumes the audio context; must be called from a user gesture. */
   unlock(): void {
+    const ctx = this.context();
+    if (ctx && ctx.state !== "running") void ctx.resume().catch(() => undefined);
+  }
+
+  /** `unlock()` that waits until the context runs; true when it does (call from a user gesture). */
+  async resume(): Promise<boolean> {
+    const ctx = this.context();
+    if (!ctx) return false;
+    if (ctx.state !== "running") await ctx.resume().catch(() => undefined);
+    return this.unlocked;
+  }
+
+  /** Decodes an audio file (a player's clip); works before the unlock too. Null when it cannot be decoded. */
+  async decode(data: ArrayBuffer): Promise<AudioBuffer | null> {
+    const ctx = this.context();
+    if (!ctx) return null;
     try {
-      if (!this.ctx) {
-        this.ctx = new AudioContext();
-        this.master = this.ctx.createGain();
-        this.master.gain.value = MASTER_GAIN;
-        this.master.connect(this.ctx.destination);
-      }
-      if (this.ctx.state === "suspended") void this.ctx.resume();
+      return await ctx.decodeAudioData(data);
     } catch {
-      // WebAudio unavailable – the game works without sounds.
-      this.ctx = null;
-      this.master = null;
+      return null;
     }
+  }
+
+  /** Seconds on the audio clock (positions of `playBuffer`). */
+  get currentTime(): number {
+    return this.ctx?.currentTime ?? 0;
+  }
+
+  /**
+   * Plays `buffer` from `offset` seconds at full volume (not through the
+   * effects' master gain). Returns a stop function, or null while locked;
+   * `onEnded` runs when the buffer ends or is stopped.
+   */
+  playBuffer(buffer: AudioBuffer, offset: number, onEnded: () => void): (() => void) | null {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== "running") return null;
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.onended = () => {
+      source.disconnect();
+      onEnded();
+    };
+    source.start(0, Math.min(Math.max(0, offset), buffer.duration));
+    return () => {
+      try {
+        source.stop();
+      } catch {
+        // Already stopped.
+      }
+    };
   }
 
   /** Short wood-block tick (last 5 seconds). */
@@ -108,9 +160,31 @@ export class StageAudio {
 
   dispose(): void {
     this.stopLoop();
+    this.stateListener = null;
     void this.ctx?.close().catch(() => undefined);
     this.ctx = null;
     this.master = null;
+  }
+
+  /** The audio context, created on first use (suspended until `unlock()`); null without WebAudio. */
+  private context(): AudioContext | null {
+    if (this.ctx) return this.ctx;
+    try {
+      // iPhone: play even with the ringer switch on silent (like a video would).
+      const session = (navigator as Navigator & AudioSessionNavigator).audioSession;
+      if (session) session.type = "playback";
+      const ctx = new AudioContext();
+      this.master = ctx.createGain();
+      this.master.gain.value = MASTER_GAIN;
+      this.master.connect(ctx.destination);
+      ctx.onstatechange = () => this.stateListener?.(ctx.state === "running");
+      this.ctx = ctx;
+    } catch {
+      // WebAudio unavailable – the game works without sounds.
+      this.ctx = null;
+      this.master = null;
+    }
+    return this.ctx;
   }
 
   private scheduleLoop(): void {

@@ -6,6 +6,9 @@ const emptyToUndefined = (v: unknown) => (typeof v === "string" && v.trim() === 
 const positiveNumber = (fallback: number) =>
   z.preprocess(emptyToUndefined, z.coerce.number().positive().default(fallback));
 
+const positiveInt = (fallback: number) =>
+  z.preprocess(emptyToUndefined, z.coerce.number().int().positive().default(fallback));
+
 export const configSchema = z.object({
   NODE_ENV: z.preprocess(emptyToUndefined, z.enum(["development", "production", "test"]).default("development")),
   PORT: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1).max(65535).default(3000)),
@@ -24,7 +27,12 @@ export const configSchema = z.object({
   ),
   MAX_IMAGE_MB: positiveNumber(5),
   MAX_AUDIO_MB: positiveNumber(15),
+  MAX_VIDEO_MB: positiveNumber(50),
   GAME_TTL_HOURS: positiveNumber(12),
+  /** `player:join` per IP + PIN and minute: 200 players behind one NAT + nickname retries + reloads. */
+  JOIN_RATE_LIMIT_PER_MIN: positiveInt(400),
+  /** `GET /api/games/:pin/exists` per IP and minute: 200 players × (landing + reloads), one school NAT. */
+  EXISTS_RATE_LIMIT_PER_MIN: positiveInt(1000),
 });
 
 export type Config = z.infer<typeof configSchema>;

@@ -57,6 +57,7 @@ export function presentationOrder(question: Question, shuffleOptions: boolean, r
     case "hotspot":
     case "text":
     case "music":
+    case "number":
       return null;
   }
 }

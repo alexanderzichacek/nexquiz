@@ -18,6 +18,7 @@ import {
 import { fraction, ONE, ZERO, type Fraction } from "./fraction.js";
 import { matchesNormalized } from "./fuzzy.js";
 import { normalize } from "./normalize.js";
+import { numberScore } from "./number.js";
 
 /** `single`: 1 when the chosen option is the correct one. */
 export function singleScore(answer: SingleAnswer, data: Pick<SingleData, "correctId">): Fraction {
@@ -27,7 +28,8 @@ export function singleScore(answer: SingleAnswer, data: Pick<SingleData, "correc
 /**
  * `multi`:
  * - `all`: 1 only when the sets match exactly,
- * - `partial`: `max(0, (hits − wrongly selected) / correctIds.length)`.
+ * - `partial`: `max(0, (hits − 0.5 × wrongly selected) / correctIds.length)`,
+ *   so a wrong pick costs half of a hit instead of cancelling it.
  */
 export function multiScore(answer: MultiAnswer, data: Pick<MultiData, "correctIds" | "scoring">): Fraction {
   const correct = new Set(data.correctIds);
@@ -42,7 +44,10 @@ export function multiScore(answer: MultiAnswer, data: Pick<MultiData, "correctId
   if (data.scoring === "all") {
     return hits === correct.size && wrong === 0 ? ONE : ZERO;
   }
-  return fraction(Math.max(0, hits - wrong), correct.size);
+  if (wrong === 0) return fraction(hits, correct.size);
+  // Exact fraction without floats: (2·hits − wrong) / (2·|correct|).
+  const num = 2 * hits - wrong;
+  return num > 0 ? fraction(num, 2 * correct.size) : ZERO;
 }
 
 /**
@@ -152,6 +157,8 @@ export interface ScoreContext {
   /** `height / width` of the hotspot image; defaults to 1. */
   imageAspect?: number;
   override?: OverrideLookup;
+  /** `number` in `closest` mode: the smallest distance of any answer of the question (see `closestDistance`). */
+  closestDistance?: number | null;
 }
 
 export interface ScoreResult {
@@ -196,5 +203,10 @@ export function scoreAnswer(question: Question, answer: TaggedAnswer, ctx: Score
       if (answer.type !== "music") return { correctness: ZERO };
       return musicScore(answer.payload.answers, question.data.fields, question.data.tolerance, ctx.override);
     }
+    case "number":
+      return {
+        correctness:
+          answer.type === "number" ? numberScore(answer.payload.value, question.data, ctx.closestDistance) : ZERO,
+      };
   }
 }

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { localIdSchema } from "./common.js";
-import { LIMITS, type Question, type QuestionType } from "./question.js";
+import { LIMITS, numberValueSchema, type Question, type QuestionType } from "./question.js";
 
 const textInputSchema = z.string().trim().max(LIMITS.textAnswer.max);
 
@@ -33,6 +33,9 @@ export const musicAnswerSchema = z.object({
 });
 export type MusicAnswer = z.infer<typeof musicAnswerSchema>;
 
+export const numberAnswerSchema = z.object({ value: numberValueSchema });
+export type NumberAnswer = z.infer<typeof numberAnswerSchema>;
+
 export const answerPayloadSchemas = {
   single: singleAnswerSchema,
   multi: multiAnswerSchema,
@@ -40,6 +43,7 @@ export const answerPayloadSchemas = {
   hotspot: hotspotAnswerSchema,
   text: textAnswerSchema,
   music: musicAnswerSchema,
+  number: numberAnswerSchema,
 } as const satisfies Record<QuestionType, z.ZodType>;
 
 export type AnswerPayloadMap = {
@@ -55,6 +59,7 @@ export const taggedAnswerSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("hotspot"), payload: hotspotAnswerSchema }),
   z.object({ type: z.literal("text"), payload: textAnswerSchema }),
   z.object({ type: z.literal("music"), payload: musicAnswerSchema }),
+  z.object({ type: z.literal("number"), payload: numberAnswerSchema }),
 ]);
 export type TaggedAnswer = z.infer<typeof taggedAnswerSchema>;
 
@@ -96,6 +101,10 @@ export function parseAnswerPayload(question: Question, raw: unknown): TaggedAnsw
     case "music": {
       const r = musicAnswerSchema.safeParse(raw);
       return r.success ? { type: "music", payload: r.data } : null;
+    }
+    case "number": {
+      const r = numberAnswerSchema.safeParse(raw);
+      return r.success ? { type: "number", payload: r.data } : null;
     }
   }
 }

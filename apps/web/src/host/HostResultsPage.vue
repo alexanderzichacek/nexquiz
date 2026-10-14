@@ -4,6 +4,7 @@ import { computed, onMounted, ref } from "vue";
 import { RouterLink, useRoute } from "vue-router";
 import { format, plural, sk } from "@/i18n/sk";
 import { ApiError, apiRequest } from "@/lib/api";
+import { formatScore } from "@/lib/format";
 import { formatShortDate } from "@/lib/time";
 import HostAdminLayout from "./HostAdminLayout.vue";
 
@@ -41,7 +42,7 @@ const rows = computed<RankedRow[]>(() => {
 });
 
 function score(value: number): string {
-  return value.toFixed(2);
+  return formatScore(value);
 }
 
 onMounted(async () => {
@@ -82,13 +83,13 @@ onMounted(async () => {
                 <th scope="col">{{ sk.results.nickname }}</th>
                 <th scope="col" class="num">{{ sk.results.score }}</th>
                 <th
-                  v-for="q in results.questions"
+                  v-for="(q, n) in results.questions"
                   :key="q.index"
                   scope="col"
                   class="num"
-                  :title="format(sk.results.questionTitle, { n: q.index + 1, prompt: q.prompt })"
+                  :title="format(sk.results.questionTitle, { n: n + 1, prompt: q.prompt })"
                 >
-                  {{ format(sk.results.question, { n: q.index + 1 }) }}
+                  {{ format(sk.results.question, { n: n + 1 }) }}
                 </th>
               </tr>
             </thead>

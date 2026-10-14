@@ -48,7 +48,7 @@ export function nicknameKey(nickname: string): string {
 export const playerTokenSchema = z.string().min(16).max(256);
 
 /** Game state machine states (Redis `game:{pin}.state`). */
-export const GAME_STATES = ["LOBBY", "QUESTION", "REVEAL", "LEADERBOARD", "FINISHED"] as const;
+export const GAME_STATES = ["LOBBY", "QUESTION", "REVEAL", "LEADERBOARD", "PAGE", "FINISHED"] as const;
 export const gameStateNameSchema = z.enum(GAME_STATES);
 export type GameStateName = z.infer<typeof gameStateNameSchema>;
 

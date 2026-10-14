@@ -1,17 +1,18 @@
 import { randomUUID } from "node:crypto";
 import {
   DEFAULT_QUIZ_SETTINGS,
-  questionSchema,
+  isPage,
+  quizItemSchema,
   quizSettingsSchema,
   type ImageSize,
   type MediaRef,
-  type Question,
   type Quiz,
+  type QuizItem,
   type QuizDto,
   type QuizSummary,
   type QuizUpdateRequest,
 } from "@nexquiz/shared";
-import { asc, count, desc, eq, inArray } from "drizzle-orm";
+import { asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { AppError } from "../errors.js";
 import type { QuizSource } from "../game/ports.js";
 import type { Database } from "./client.js";
@@ -20,11 +21,26 @@ import { media, questions, quizzes, type QuestionRow, type QuizRow } from "./sch
 
 type QuestionInsert = typeof questions.$inferInsert;
 
-function toQuestion(row: QuestionRow): Question {
+/** Column values a `page` stores in the `questions` table instead of a time limit and points. */
+const PAGE_TIME_LIMIT = 30;
+const PAGE_POINTS = "0.00";
+
+function toItem(row: QuestionRow): QuizItem {
+  if (row.type === "page") {
+    const description = (row.data as { description?: unknown } | null)?.description;
+    return quizItemSchema.parse({
+      id: row.id,
+      type: "page",
+      title: row.prompt,
+      description: typeof description === "string" ? description : "",
+      ...(row.imageId ? { media: { imageId: row.imageId } } : {}),
+    });
+  }
   const ref: MediaRef = {};
   if (row.imageId) ref.imageId = row.imageId;
   if (row.audioId) ref.audioId = row.audioId;
-  return questionSchema.parse({
+  if (row.videoId) ref.videoId = row.videoId;
+  return quizItemSchema.parse({
     id: row.id,
     type: row.type,
     prompt: row.prompt,
@@ -35,7 +51,22 @@ function toQuestion(row: QuestionRow): Question {
   });
 }
 
-function toQuestionRow(quizId: string, q: Question, position: number): QuestionInsert {
+function toQuestionRow(quizId: string, q: QuizItem, position: number): QuestionInsert {
+  if (isPage(q)) {
+    return {
+      id: q.id,
+      quizId,
+      position,
+      type: "page",
+      prompt: q.title,
+      imageId: q.media?.imageId ?? null,
+      audioId: null,
+      videoId: null,
+      timeLimit: PAGE_TIME_LIMIT,
+      points: PAGE_POINTS,
+      data: { description: q.description },
+    };
+  }
   return {
     id: q.id,
     quizId,
@@ -44,13 +75,14 @@ function toQuestionRow(quizId: string, q: Question, position: number): QuestionI
     prompt: q.prompt,
     imageId: q.media?.imageId ?? null,
     audioId: q.media?.audioId ?? null,
+    videoId: q.media?.videoId ?? null,
     timeLimit: q.timeLimit,
     points: q.points.toFixed(2),
     data: q.data,
   };
 }
 
-function toDto(row: QuizRow, qs: readonly Question[]): QuizDto {
+function toDto(row: QuizRow, qs: readonly QuizItem[]): QuizDto {
   return {
     id: row.id,
     title: row.title,
@@ -79,7 +111,8 @@ export class QuizRepository implements QuizSource {
         id: quizzes.id,
         title: quizzes.title,
         updatedAt: quizzes.updatedAt,
-        questionCount: count(questions.id),
+        // Pages are not questions.
+        questionCount: sql<number>`count(${questions.id}) filter (where ${questions.type} <> 'page')`,
       })
       .from(quizzes)
       .leftJoin(questions, eq(questions.quizId, quizzes.id))
@@ -97,7 +130,7 @@ export class QuizRepository implements QuizSource {
     const [row] = await this.db.select().from(quizzes).where(eq(quizzes.id, id));
     if (!row) return null;
     const qs = await this.db.select().from(questions).where(eq(questions.quizId, id)).orderBy(asc(questions.position));
-    return toDto(row, qs.map(toQuestion));
+    return toDto(row, qs.map(toItem));
   }
 
   async create(title: string): Promise<QuizDto> {
@@ -184,14 +217,20 @@ export class QuizRepository implements QuizSource {
     };
   }
 
-  /** Every `imageId` must be an uploaded image and every `audioId` an uploaded audio file. */
-  private async assertMediaRefs(qs: readonly Question[]): Promise<void> {
-    const wanted = new Map<string, "image" | "audio">();
+  /** Every `imageId` / `audioId` / `videoId` must be an uploaded file of that kind. */
+  private async assertMediaRefs(qs: readonly QuizItem[]): Promise<void> {
+    const wanted = new Map<string, "image" | "audio" | "video">();
+    const want = (id: string | undefined, kind: "image" | "audio" | "video"): void => {
+      if (!id) return;
+      // The same media id used as two different kinds can never be valid.
+      if (wanted.get(id) !== undefined && wanted.get(id) !== kind) throw new AppError("INVALID");
+      wanted.set(id, kind);
+    };
     for (const q of qs) {
-      if (q.media?.imageId) wanted.set(q.media.imageId, "image");
-      if (q.media?.audioId) {
-        if (wanted.get(q.media.audioId) === "image") throw new AppError("INVALID");
-        wanted.set(q.media.audioId, "audio");
+      want(q.media?.imageId, "image");
+      if (!isPage(q)) {
+        want(q.media?.audioId, "audio");
+        want(q.media?.videoId, "video");
       }
     }
     if (wanted.size === 0) return;

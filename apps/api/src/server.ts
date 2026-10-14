@@ -5,6 +5,8 @@ import { runMigrations } from "./db/migrate.js";
 import { TimerScheduler } from "./game/scheduler.js";
 import { attachRealtime } from "./realtime/index.js";
 import { SocketNotifier } from "./realtime/notifier.js";
+import { JOIN_LIMIT } from "./realtime/play.js";
+import { FixedWindowLimiter } from "./realtime/rateLimit.js";
 import { hostCookieVerifier } from "./rest/session.js";
 import { createRedis } from "./store/redis.js";
 
@@ -25,6 +27,7 @@ async function main(): Promise<void> {
     verifyHost: hostCookieVerifier(app),
     log: app.log.child({ module: "realtime" }),
     redis: redis.redis,
+    joinLimiter: new FixedWindowLimiter(config.JOIN_RATE_LIMIT_PER_MIN, JOIN_LIMIT.windowMs),
   });
   app.addHook("preClose", async () => {
     scheduler.cancelAll();

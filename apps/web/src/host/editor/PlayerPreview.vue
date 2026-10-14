@@ -88,8 +88,19 @@ function tileState(id: string): "idle" | "selected" | "wrong" {
         <BaseButton variant="primary" block large>{{ sk.play.submit }}</BaseButton>
       </template>
 
+      <template v-else-if="question.type === 'number'">
+        <input
+          class="phone__input tabular"
+          inputmode="decimal"
+          :placeholder="sk.play.numberPlaceholder"
+          :aria-label="sk.play.numberPlaceholder"
+          autocomplete="off"
+        />
+        <BaseButton variant="primary" block large>{{ sk.play.submit }}</BaseButton>
+      </template>
+
       <template v-else>
-        <p v-if="question.type === 'music'" class="phone__listen">{{ sk.play.listen }}</p>
+        <p v-if="question.type === 'music' || question.media?.audioId" class="phone__listen">{{ sk.play.listen }}</p>
         <label v-for="f in textFields" :key="f.key" class="phone__field">
           <span v-if="question.type === 'music'" class="phone__label">{{ f.label ?? sk.fields[f.key] }}</span>
           <input

@@ -1,4 +1,11 @@
-import { quizUpdateRequestSchema, weightToThousandths, type Question, type QuizUpdateRequest } from "@nexquiz/shared";
+import {
+  isPage,
+  quizUpdateRequestSchema,
+  weightToThousandths,
+  type Question,
+  type QuizItem,
+  type QuizUpdateRequest,
+} from "@nexquiz/shared";
 import { sk } from "@/i18n/sk";
 
 /** Inline error messages keyed by dotted path inside a question (`data.options.0.text`). */
@@ -22,6 +29,11 @@ const MESSAGES: Record<string, string> = {
   points: sk.editorErrors.points,
   "media.imageId": sk.editorErrors.image,
   "media.audioId": sk.editorErrors.audio,
+  "media.videoId": sk.editorErrors.video,
+  // Pages: their `title` / `description` are keyed `pageTitle` / `pageDescription` (see `validateQuiz`).
+  content: sk.editorErrors.pageContent,
+  pageTitle: sk.editorErrors.pageTitle,
+  pageDescription: sk.editorErrors.pageDescription,
   "data.options": sk.editorErrors.options,
   "data.options.*.text": sk.editorErrors.optionText,
   "data.correctId": sk.editorErrors.correctId,
@@ -34,6 +46,8 @@ const MESSAGES: Record<string, string> = {
   "data.fields.*.accepted": sk.editorErrors.accepted,
   "data.fields.*.accepted.*": sk.editorErrors.alias,
   "data.fields.*.weight": sk.editorErrors.weight,
+  "data.answer": sk.editorErrors.numberAnswer,
+  "data.tolerance": sk.editorErrors.numberTolerance,
   "data.clip.start": sk.editorErrors.clipStart,
   "data.clip.duration": sk.editorErrors.clipDuration,
 };
@@ -58,6 +72,15 @@ export function messageFor(path: readonly PropertyKey[]): string {
 function add(map: ErrorMap, path: readonly PropertyKey[]): void {
   const key = keyFor(path);
   map[key] ??= messageFor(path);
+}
+
+/** A page's `title` / `description` share their names with the quiz fields; key them separately. */
+function pagePath(item: QuizItem | undefined, path: readonly PropertyKey[]): readonly PropertyKey[] {
+  if (!item || !isPage(item)) return path;
+  const [head, ...tail] = path;
+  if (head === "title") return ["pageTitle", ...tail];
+  if (head === "description") return ["pageDescription", ...tail];
+  return path;
 }
 
 /**
@@ -97,7 +120,7 @@ export function validateQuiz(draft: QuizUpdateRequest): QuizValidation {
       const [head, index, ...rest] = issue.path;
       if (head === "questions" && typeof index === "number") {
         const map = questionMap(index);
-        if (map) add(map, rest.length > 0 ? rest : ["type"]);
+        if (map) add(map, rest.length > 0 ? pagePath(draft.questions[index], rest) : ["type"]);
       } else {
         add(quiz, issue.path.length > 0 ? [issue.path[0] ?? "title"] : ["title"]);
       }
@@ -105,6 +128,7 @@ export function validateQuiz(draft: QuizUpdateRequest): QuizValidation {
   }
 
   draft.questions.forEach((question, index) => {
+    if (isPage(question)) return;
     const extra = supplementalIssues(question);
     if (extra.length === 0) return;
     const map = questionMap(index);

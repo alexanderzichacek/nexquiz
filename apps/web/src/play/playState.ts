@@ -1,7 +1,9 @@
 import type {
+  Avatar,
   GameFinishedEvent,
   GameStateName,
   LeaderboardEvent,
+  PageShowEvent,
   PlayerGameState,
   PlayerResultEvent,
   QuestionEndEvent,
@@ -17,10 +19,12 @@ export interface PlayView {
   pin: string;
   playerId: string;
   nickname: string;
+  avatar: Avatar;
   state: GameStateName;
   currentIndex: number;
   total: number;
   question: QuestionStartEvent | null;
+  page: PageShowEvent | null;
   hasAnswered: boolean;
   result: PlayerResultEvent | null;
   score: number;
@@ -36,10 +40,12 @@ export function fromPlayerState(s: PlayerGameState, localNow: number = Date.now(
     pin: s.pin,
     playerId: s.playerId,
     nickname: s.nickname,
+    avatar: s.avatar,
     state: s.state,
     currentIndex: s.currentIndex,
     total: s.total,
     question: s.question,
+    page: s.page,
     hasAnswered: s.hasAnswered,
     result: s.result,
     score: s.score,
@@ -57,11 +63,17 @@ export function onQuestionStart(v: PlayView, e: QuestionStartEvent, localNow: nu
     currentIndex: e.index,
     total: e.total,
     question: e,
+    page: null,
     hasAnswered: false,
     result: null,
     leaderboard: null,
     clockOffset: clockOffset(e.serverNow, localNow),
   };
+}
+
+/** `page:show` – a page between questions. */
+export function onPageShow(v: PlayView, e: PageShowEvent): PlayView {
+  return { ...v, state: "PAGE", currentIndex: e.index, question: null, page: e, hasAnswered: false, result: null, leaderboard: null };
 }
 
 export function onQuestionEnd(v: PlayView, e: QuestionEndEvent): PlayView {
@@ -95,6 +107,7 @@ export function onFinished(v: PlayView, e: GameFinishedEvent): PlayView {
     ...v,
     state: "FINISHED",
     question: null,
+    page: null,
     finished: e,
     ...(own ? { score: own.score, rank: own.rank } : {}),
   };

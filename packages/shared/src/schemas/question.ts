@@ -1,26 +1,31 @@
 import { z } from "zod";
 import { idSchema, localIdSchema } from "./common.js";
 
-export const QUESTION_TYPES = ["single", "multi", "order", "hotspot", "text", "music"] as const;
+export const QUESTION_TYPES = ["single", "multi", "order", "hotspot", "text", "music", "number"] as const;
 export const questionTypeSchema = z.enum(QUESTION_TYPES);
 export type QuestionType = z.infer<typeof questionTypeSchema>;
 
 /** Limits from LOGIC.md "Validácia a limity" and the editor description. */
 export const LIMITS = {
   timeLimit: { min: 5, max: 120, default: 30 },
-  points: { min: 0, max: 1000, default: 1 },
+  // Scores are whole numbers in the thousands (a fast correct answer ≈ 1000); `numeric(6,2)` in the DB caps this at 9999.99.
+  points: { min: 0, max: 9999, default: 1000 },
   prompt: { max: 300 },
   optionText: { max: 120 },
   choiceOptions: { min: 2, max: 6 },
   orderItems: { min: 3, max: 8 },
   hotspotTargets: { min: 1, max: 10 },
   textAnswer: { max: 100 },
+  /** `number`: values (answer, tolerance, a player's guess) lie in ±`max` and have at most `decimals` decimals, so they scale to exact integers. */
+  number: { max: 1_000_000_000_000, decimals: 3 },
   alias: { max: 100 },
   aliases: { max: 50 },
   fieldLabel: { max: 40 },
   clip: { maxStart: 3600, minDuration: 1, maxDuration: 120 },
   quizTitle: { max: 120 },
   quizDescription: { max: 1000 },
+  pageTitle: { max: 120 },
+  pageDescription: { max: 1000 },
   questions: { max: 200 },
 } as const;
 
@@ -33,6 +38,11 @@ export type Tolerance = z.infer<typeof toleranceSchema>;
 export const SCORING_MODES = ["partial", "all"] as const;
 export const scoringModeSchema = z.enum(SCORING_MODES);
 export type ScoringMode = z.infer<typeof scoringModeSchema>;
+
+/** How a `number` question is judged: the nearest guess(es) win, or every guess within the tolerance. */
+export const NUMBER_MODES = ["closest", "tolerance"] as const;
+export const numberModeSchema = z.enum(NUMBER_MODES);
+export type NumberMode = z.infer<typeof numberModeSchema>;
 
 /** Returns true when `value` has at most `decimals` decimal places. */
 export function hasMaxDecimals(value: number, decimals: number): boolean {
@@ -56,10 +66,17 @@ export const optionSchema = z.object({
 });
 export type Option = z.infer<typeof optionSchema>;
 
-export const mediaRefSchema = z.object({
-  imageId: idSchema.optional(),
-  audioId: idSchema.optional(),
-});
+export const mediaRefSchema = z
+  .object({
+    imageId: idSchema.optional(),
+    audioId: idSchema.optional(),
+    /** Host-screen video; an alternative to `imageId`, never sent to players. */
+    videoId: idSchema.optional(),
+  })
+  .refine((m) => m.imageId === undefined || m.videoId === undefined, {
+    message: "A question has an image or a video, not both",
+    path: ["videoId"],
+  });
 export type MediaRef = z.infer<typeof mediaRefSchema>;
 
 // ---------------------------------------------------------------------------
@@ -148,12 +165,6 @@ export const textFieldSchema = z.object({
 });
 export type TextField = z.infer<typeof textFieldSchema>;
 
-export const textDataSchema = z.object({
-  fields: z.tuple([textFieldSchema]),
-  tolerance: toleranceSchema,
-});
-export type TextData = z.infer<typeof textDataSchema>;
-
 export const musicArtistFieldSchema = z.object({
   key: z.literal("artist"),
   label: fieldLabelSchema,
@@ -174,6 +185,14 @@ export const clipSchema = z.object({
 });
 export type Clip = z.infer<typeof clipSchema>;
 
+export const textDataSchema = z.object({
+  fields: z.tuple([textFieldSchema]),
+  tolerance: toleranceSchema,
+  /** Part of the audio played on the host screen (e.g. a song cut off before the lyrics to fill in); present exactly when the question has audio. */
+  clip: clipSchema.optional(),
+});
+export type TextData = z.infer<typeof textDataSchema>;
+
 export const musicDataSchema = z
   .object({
     clip: clipSchema,
@@ -185,6 +204,25 @@ export const musicDataSchema = z
     path: ["fields"],
   });
 export type MusicData = z.infer<typeof musicDataSchema>;
+
+/** A finite number within ±`LIMITS.number.max` with at most `LIMITS.number.decimals` decimals. */
+export const numberValueSchema = z
+  .number()
+  .min(-LIMITS.number.max)
+  .max(LIMITS.number.max)
+  .refine((v) => hasMaxDecimals(v, LIMITS.number.decimals), {
+    message: `At most ${LIMITS.number.decimals} decimals`,
+  });
+
+export const numberDataSchema = z.object({
+  /** The correct number. */
+  answer: numberValueSchema,
+  /** `closest`: the nearest guess(es) score; `tolerance`: every guess with `|guess − answer| ≤ tolerance` scores. */
+  mode: numberModeSchema,
+  /** Allowed distance in `tolerance` mode (0 = exact); kept but unused in `closest` mode. */
+  tolerance: numberValueSchema.refine((t) => t >= 0, { message: "Tolerance cannot be negative" }),
+});
+export type NumberData = z.infer<typeof numberDataSchema>;
 
 /** Any text-like field (shared by `text` and `music`). */
 export type AnswerField = TextField | MusicField;
@@ -233,13 +271,30 @@ export const hotspotQuestionSchema = z
   .refine((q) => q.media?.imageId !== undefined, {
     message: "Hotspot question requires an image",
     path: ["media", "imageId"],
+  })
+  .refine((q) => q.media?.videoId === undefined, {
+    message: "Hotspot question cannot have a video",
+    path: ["media", "videoId"],
   });
 
-export const textQuestionSchema = z.object({
-  ...questionBaseShape,
-  type: z.literal("text"),
-  data: textDataSchema,
-});
+export const textQuestionSchema = z
+  .object({
+    ...questionBaseShape,
+    type: z.literal("text"),
+    data: textDataSchema,
+  })
+  .refine((q) => q.media?.audioId === undefined || q.data.clip !== undefined, {
+    message: "Text question with audio requires a clip",
+    path: ["data", "clip"],
+  })
+  .refine((q) => q.data.clip === undefined || q.media?.audioId !== undefined, {
+    message: "Text question clip requires audio",
+    path: ["media", "audioId"],
+  })
+  .refine((q) => q.media?.audioId === undefined || q.media.videoId === undefined, {
+    message: "Text question cannot have both audio and a video",
+    path: ["media", "videoId"],
+  });
 
 export const musicQuestionSchema = z
   .object({
@@ -250,7 +305,51 @@ export const musicQuestionSchema = z
   .refine((q) => q.media?.audioId !== undefined, {
     message: "Music question requires audio",
     path: ["media", "audioId"],
+  })
+  .refine((q) => q.media?.videoId === undefined, {
+    message: "Music question cannot have a video",
+    path: ["media", "videoId"],
   });
+
+export const numberQuestionSchema = z
+  .object({
+    ...questionBaseShape,
+    type: z.literal("number"),
+    data: numberDataSchema,
+  })
+  .refine((q) => q.media?.audioId === undefined, {
+    message: "Number question cannot have audio",
+    path: ["media", "audioId"],
+  });
+
+// ---------------------------------------------------------------------------
+// Page (an item without a question: a divider between categories)
+// ---------------------------------------------------------------------------
+
+/** Type tag of a page item in `Quiz.questions` (not a question type). */
+export const PAGE_TYPE = "page" as const;
+
+export const pageMediaSchema = z.object({ imageId: idSchema.optional() });
+export type PageMedia = z.infer<typeof pageMediaSchema>;
+
+/**
+ * A page shown between questions: a title, a description and / or an image
+ * (at least one of them). It has no answers, no points and no time limit; the
+ * host moves on with `host:next`.
+ */
+export const pageSchema = z
+  .object({
+    id: idSchema,
+    type: z.literal(PAGE_TYPE),
+    title: z.string().trim().max(LIMITS.pageTitle.max),
+    description: z.string().trim().max(LIMITS.pageDescription.max),
+    media: pageMediaSchema.optional(),
+  })
+  .refine((p) => p.title !== "" || p.description !== "" || p.media?.imageId !== undefined, {
+    message: "A page needs a title, a description or an image",
+    path: ["content"],
+  });
+export type Page = z.infer<typeof pageSchema>;
 
 /** A question validated with all editor rules (LOGIC.md "Validácia a limity"). */
 export const questionSchema = z.discriminatedUnion("type", [
@@ -260,6 +359,7 @@ export const questionSchema = z.discriminatedUnion("type", [
   hotspotQuestionSchema,
   textQuestionSchema,
   musicQuestionSchema,
+  numberQuestionSchema,
 ]);
 export type Question = z.infer<typeof questionSchema>;
 export type QuestionOf<T extends QuestionType> = Extract<Question, { type: T }>;
@@ -269,6 +369,38 @@ export type OrderQuestion = QuestionOf<"order">;
 export type HotspotQuestion = QuestionOf<"hotspot">;
 export type TextQuestion = QuestionOf<"text">;
 export type MusicQuestion = QuestionOf<"music">;
+export type NumberQuestion = QuestionOf<"number">;
+
+/** One entry of a quiz: a question or a page. */
+export const quizItemSchema = z.discriminatedUnion("type", [
+  singleQuestionSchema,
+  multiQuestionSchema,
+  orderQuestionSchema,
+  hotspotQuestionSchema,
+  textQuestionSchema,
+  musicQuestionSchema,
+  numberQuestionSchema,
+  pageSchema,
+]);
+export type QuizItem = z.infer<typeof quizItemSchema>;
+
+export function isPage(item: QuizItem): item is Page {
+  return item.type === PAGE_TYPE;
+}
+
+export function isQuestion(item: QuizItem): item is Question {
+  return item.type !== PAGE_TYPE;
+}
+
+/** Number of questions (pages excluded) in the quiz. */
+export function questionCount(items: readonly QuizItem[]): number {
+  return items.filter(isQuestion).length;
+}
+
+/** 1-based number of the question at `index` (pages are not numbered); for a page the number of the last question before it. */
+export function questionNumber(items: readonly QuizItem[], index: number): number {
+  return questionCount(items.slice(0, index + 1));
+}
 
 // ---------------------------------------------------------------------------
 // Quiz
@@ -290,11 +422,12 @@ export type QuizSettings = z.infer<typeof quizSettingsSchema>;
 export const quizTitleSchema = z.string().trim().min(1).max(LIMITS.quizTitle.max);
 export const quizDescriptionSchema = z.string().trim().max(LIMITS.quizDescription.max).nullable();
 
+/** Items of a quiz in presentation order: questions with pages between them. */
 export const quizQuestionsSchema = z
-  .array(questionSchema)
+  .array(quizItemSchema)
   .max(LIMITS.questions.max)
   .refine((qs) => new Set(qs.map((q) => q.id)).size === qs.length, {
-    message: "Question ids must be unique",
+    message: "Item ids must be unique",
   });
 
 /** A complete quiz as edited and saved (questions in their final order). */

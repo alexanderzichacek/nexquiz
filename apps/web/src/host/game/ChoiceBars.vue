@@ -41,7 +41,7 @@ const bars = computed(() =>
       <span class="bars__label">
         <OptionShape :index="b.index" class="bars__shape" />
         <span class="bars__letter">{{ optionLetter(b.index) }}</span>
-        <span class="bars__text">{{ b.option.text }}</span>
+        <span class="bars__text line-clamp">{{ b.option.text }}</span>
         <span v-if="b.correct" class="bars__check" aria-hidden="true">✓</span>
       </span>
       <span class="visually-hidden">
@@ -52,9 +52,10 @@ const bars = computed(() =>
 </template>
 
 <style scoped>
+/* fills the height its parent gives it (flex: 1 + min-height: 0 there); bars scale inside */
 .bars {
   display: flex;
-  align-items: flex-end;
+  align-items: stretch;
   justify-content: center;
   gap: var(--s-4);
   width: 100%;
@@ -70,6 +71,7 @@ const bars = computed(() =>
   gap: var(--s-2);
   flex: 1;
   min-width: 0;
+  min-height: 0;
   max-width: var(--bar-col-max);
   transition: opacity var(--t-slow) var(--ease);
 }
@@ -83,7 +85,8 @@ const bars = computed(() =>
 .bars__track {
   display: flex;
   align-items: flex-end;
-  height: var(--bar-chart-h);
+  flex: 1 1 0;
+  min-height: var(--s-6);
 }
 
 .bars__bar {
@@ -118,11 +121,11 @@ const bars = computed(() =>
 }
 
 .bars__text {
+  --lines: 2;
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .bars__col--wrong {

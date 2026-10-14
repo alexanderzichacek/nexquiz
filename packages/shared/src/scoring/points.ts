@@ -25,7 +25,7 @@ export function fromHundredths(hundredths: number): number {
 }
 
 export interface PointsInput {
-  /** `question.points` (max. 2 decimals). */
+  /** `question.points` (max. 2 decimals, 1000 by default). */
   points: number;
   correctness: Fraction;
   /** `receivedAt − questionStartedAt` (server time). */
@@ -35,8 +35,10 @@ export interface PointsInput {
 }
 
 /**
- * `points × correctness × speedFactor` in integer hundredths, computed exactly
- * and rounded half up once. Zero correctness always yields 0.
+ * `points × correctness × speedFactor`, computed exactly and rounded half up
+ * once to a **whole point** (scores are shown without decimals). Returned in
+ * integer hundredths like every score sum, so it is always a multiple of 100.
+ * Zero correctness always yields 0.
  */
 export function computePointsHundredths(input: PointsInput): number {
   if (input.correctness.num === 0) return 0;
@@ -44,10 +46,11 @@ export function computePointsHundredths(input: PointsInput): number {
   const sf = speedFactor(input.answeredMs, input.timeLimitMs, input.speedBonus);
   const n = p * BigInt(input.correctness.num) * BigInt(sf.num);
   const d = BigInt(input.correctness.den) * BigInt(sf.den);
-  return Number(roundDivBig(n, d));
+  // `n / d` is in hundredths of a point; dividing by 100 more yields whole points.
+  return Number(roundDivBig(n, d * 100n)) * 100;
 }
 
-/** Points as a number with 2 decimals (the value stored as `numeric(8,2)`). */
+/** Points of one answer as a whole number (stored as `numeric(8,2)` with `.00`). */
 export function computePoints(input: PointsInput): number {
   return fromHundredths(computePointsHundredths(input));
 }

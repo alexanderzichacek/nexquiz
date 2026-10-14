@@ -2,9 +2,10 @@
 import type { LobbyPlayer } from "@nexquiz/shared";
 import { computed } from "vue";
 import { nicknameColor } from "@/components/options";
+import PlayerAvatar from "@/components/PlayerAvatar.vue";
 import { format, sk } from "@/i18n/sk";
 
-/** Nickname „pill“ with a color from the name hash; a disconnected player is dimmed. */
+/** Avatar + nickname „pill“ with a color from the name hash; a disconnected player is dimmed. */
 const props = withDefaults(defineProps<{ player: LobbyPlayer; kickable?: boolean }>(), { kickable: false });
 defineEmits<{ kick: [] }>();
 
@@ -13,6 +14,7 @@ const color = computed(() => nicknameColor(props.player.nickname));
 
 <template>
   <span class="chip" :class="{ 'chip--offline': !player.connected }" :style="{ '--chip-color': color }">
+    <PlayerAvatar :avatar="player.avatar" class="chip__avatar" />
     <span class="chip__name">{{ player.nickname }}</span>
     <button
       v-if="kickable"
@@ -33,7 +35,7 @@ const color = computed(() => nicknameColor(props.player.nickname));
   align-items: center;
   gap: var(--s-1);
   min-height: var(--tap-min);
-  padding: 0 var(--s-2) 0 var(--s-4);
+  padding: 0 var(--s-2) 0 var(--s-1);
   border-radius: 999px;
   background: var(--chip-color);
   color: var(--on-option);
@@ -41,6 +43,11 @@ const color = computed(() => nicknameColor(props.player.nickname));
   font-weight: var(--fw-bold);
   box-shadow: var(--shadow);
   transition: opacity var(--t) var(--ease);
+}
+
+.chip__avatar {
+  --avatar-size: var(--avatar-chip);
+  --avatar-bg: var(--avatar-light);
 }
 
 .chip--offline {
@@ -52,7 +59,7 @@ const color = computed(() => nicknameColor(props.player.nickname));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding-right: var(--s-2);
+  padding: 0 var(--s-2) 0 var(--s-1);
 }
 
 .chip__kick {

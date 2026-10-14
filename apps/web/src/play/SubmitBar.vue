@@ -1,20 +1,18 @@
 <script setup lang="ts">
 import BaseButton from "@/components/BaseButton.vue";
 import { sk } from "@/i18n/sk";
-import { useKeyboardInset } from "@/lib/useKeyboardInset";
 
 /**
- * Sticky „Odoslať“ at the bottom of the player screen (thumb zone). It is
- * lifted by the on-screen keyboard height, so the keyboard never covers it.
+ * „Odoslať“ at the bottom of the player screen (thumb zone). The question
+ * screen never scrolls and PlayPage shrinks it by the on-screen keyboard
+ * height (`useKeyboardInset`), so the bar is always visible above the keyboard.
  */
 withDefaults(defineProps<{ disabled?: boolean }>(), { disabled: false });
 defineEmits<{ submit: [] }>();
-
-const inset = useKeyboardInset();
 </script>
 
 <template>
-  <div class="submit-bar" :style="{ '--kb-inset': `${inset}px` }">
+  <div class="submit-bar">
     <BaseButton variant="primary" block large :disabled="disabled" @click="$emit('submit')">
       {{ sk.play.submit }}
     </BaseButton>
@@ -23,11 +21,8 @@ const inset = useKeyboardInset();
 
 <style scoped>
 .submit-bar {
-  position: sticky;
-  bottom: var(--kb-inset);
-  z-index: 5;
+  flex: none;
   margin-top: auto;
-  padding: var(--s-3) 0 max(var(--s-1), env(safe-area-inset-bottom));
-  background: linear-gradient(to top, var(--play-bg) 70%, transparent);
+  padding-top: var(--s-2);
 }
 </style>

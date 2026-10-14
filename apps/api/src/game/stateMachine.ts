@@ -3,10 +3,11 @@ import { AppError } from "../errors.js";
 
 /** Allowed transitions (LOGIC.md "Stavový automat hry"). */
 export const TRANSITIONS: Readonly<Record<GameStateName, readonly GameStateName[]>> = {
-  LOBBY: ["QUESTION", "FINISHED"],
+  LOBBY: ["QUESTION", "PAGE", "FINISHED"],
   QUESTION: ["REVEAL", "FINISHED"],
-  REVEAL: ["LEADERBOARD", "QUESTION", "FINISHED"],
-  LEADERBOARD: ["QUESTION", "FINISHED"],
+  REVEAL: ["LEADERBOARD", "QUESTION", "PAGE", "FINISHED"],
+  LEADERBOARD: ["QUESTION", "PAGE", "FINISHED"],
+  PAGE: ["QUESTION", "PAGE", "FINISHED"],
   FINISHED: [],
 };
 

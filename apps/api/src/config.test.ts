@@ -17,6 +17,17 @@ describe("loadConfig", () => {
     expect(c.MAX_AUDIO_MB).toBe(15);
     expect(c.GAME_TTL_HOURS).toBe(12);
     expect(c.PUBLIC_URL).toBeUndefined();
+    expect(c.JOIN_RATE_LIMIT_PER_MIN).toBe(400);
+    expect(c.EXISTS_RATE_LIMIT_PER_MIN).toBe(1000);
+  });
+
+  it("parses the rate limits and rejects invalid ones", () => {
+    const c = loadConfig({ ...env, JOIN_RATE_LIMIT_PER_MIN: "600", EXISTS_RATE_LIMIT_PER_MIN: "" });
+    expect(c.JOIN_RATE_LIMIT_PER_MIN).toBe(600);
+    expect(c.EXISTS_RATE_LIMIT_PER_MIN).toBe(1000);
+    expect(() => loadConfig({ ...env, JOIN_RATE_LIMIT_PER_MIN: "0" })).toThrow(/JOIN_RATE_LIMIT_PER_MIN/);
+    expect(() => loadConfig({ ...env, EXISTS_RATE_LIMIT_PER_MIN: "12.5" })).toThrow(/EXISTS_RATE_LIMIT_PER_MIN/);
+    expect(() => loadConfig({ ...env, EXISTS_RATE_LIMIT_PER_MIN: "many" })).toThrow(/EXISTS_RATE_LIMIT_PER_MIN/);
   });
 
   it("treats empty values as unset and coerces numbers", () => {

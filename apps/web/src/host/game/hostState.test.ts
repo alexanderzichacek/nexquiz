@@ -1,4 +1,4 @@
-import type { HostGameState, QuestionStartEvent } from "@nexquiz/shared";
+import { DEFAULT_AVATAR, type HostGameState, type QuestionStartEvent } from "@nexquiz/shared";
 import { describe, expect, it } from "vitest";
 import {
   connectedCount,
@@ -6,6 +6,7 @@ import {
   onFinished,
   onLeaderboard,
   onLobbyPlayers,
+  onPageShow,
   onProgress,
   onQuestionEnd,
   onQuestionStart,
@@ -26,8 +27,9 @@ function lobby(): HostGameState {
     currentIndex: -1,
     total: 2,
     serverNow: 10_000,
-    players: [{ id: P1, nickname: "Jano", connected: true }],
+    players: [{ id: P1, nickname: "Jano", avatar: DEFAULT_AVATAR, connected: true }],
     question: null,
+    page: null,
     progress: null,
     reveal: null,
     leaderboard: null,
@@ -39,6 +41,8 @@ const question: QuestionStartEvent = {
   type: "single",
   index: 0,
   total: 2,
+  number: 1,
+  count: 2,
   prompt: "Hlavné mesto Austrálie?",
   media: {},
   options: [
@@ -61,8 +65,8 @@ describe("hostState", () => {
     let v = fromHostState(lobby(), 10_000);
     v = onLobbyPlayers(v, {
       players: [
-        { id: P1, nickname: "Jano", connected: true },
-        { id: P2, nickname: "Zuzka", connected: false },
+        { id: P1, nickname: "Jano", avatar: DEFAULT_AVATAR, connected: true },
+        { id: P2, nickname: "Zuzka", avatar: DEFAULT_AVATAR, connected: false },
       ],
     });
     expect(connectedCount(v)).toBe(1);
@@ -86,12 +90,24 @@ describe("hostState", () => {
     });
     expect(v.reveal?.correct).toEqual({ type: "single", correctId: "b" });
 
-    v = onLeaderboard(v, { index: 0, top: [] });
+    v = onLeaderboard(v, { index: 0, number: 1, top: [] });
     expect(v.state).toBe("LEADERBOARD");
 
     v = onFinished(v, { podium: [], ranking: [] });
     expect(v.state).toBe("FINISHED");
     expect(v.question).toBeNull();
+  });
+
+  it("shows a page between questions and leaves it with the next question", () => {
+    let v = onQuestionStart(fromHostState(lobby()), question);
+    v = onPageShow(v, { index: 1, title: "Šport", description: "Ďalšia kategória", media: {} });
+    expect(v).toMatchObject({ state: "PAGE", currentIndex: 1, question: null, reveal: null, leaderboard: null });
+    expect(v.page).toEqual({ index: 1, title: "Šport", description: "Ďalšia kategória", media: {} });
+
+    v = onQuestionStart(v, { ...question, index: 2, number: 2, total: 3 });
+    expect(v).toMatchObject({ state: "QUESTION", currentIndex: 2, page: null });
+    v = onPageShow(v, { index: 3, title: "", description: "", media: { imageId: "img" } });
+    expect(onFinished(v, { podium: [], ranking: [] }).page).toBeNull();
   });
 
   it("ignores progress outside QUESTION and stale question:end / reveal", () => {

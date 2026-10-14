@@ -1,4 +1,5 @@
 import {
+  closestDistance,
   computePointsHundredths,
   fractionToNumber,
   fromHundredths,
@@ -45,22 +46,31 @@ export function fieldInputs(answer: TaggedAnswer | null): Record<string, string>
 /**
  * Scores every answer of one question on the server: correctness from the
  * shared scorers (host overrides take precedence), points computed exactly in
- * hundredths with a single rounding.
+ * hundredths with a single rounding. A `number` question in `closest` mode is
+ * relative: its answers are scored together, never one at a time.
  */
 export function scoreQuestion(input: ScoreQuestionInput): Map<string, ScoredAnswer> {
   const { question, questionIndex, overrides } = input;
   const override = (fieldKey: string, normalized: string): boolean | undefined =>
     overrides.get(overrideKey(questionIndex, fieldKey, normalized));
 
+  const parsed = new Map<string, TaggedAnswer | null>();
+  for (const [playerId, record] of input.answers) parsed.set(playerId, parseAnswerPayload(question, record.payload));
+
+  // `closest` judges every guess against the others, so the best distance is needed up front.
+  const guesses: number[] = [];
+  for (const answer of parsed.values()) if (answer?.type === "number") guesses.push(answer.payload.value);
+  const nearest = question.type === "number" ? closestDistance(guesses, question.data.answer) : null;
+
   const out = new Map<string, ScoredAnswer>();
   for (const [playerId, record] of input.answers) {
     const answeredMs = Math.max(0, Math.round(input.answeredMs(playerId, record)));
-    const answer = parseAnswerPayload(question, record.payload);
+    const answer = parsed.get(playerId) ?? null;
     if (!answer) {
       out.set(playerId, { answer: null, result: { correctness: 0, points: 0, answeredMs }, normalized: {} });
       continue;
     }
-    const score = scoreAnswer(question, answer, { imageAspect: input.imageAspect, override });
+    const score = scoreAnswer(question, answer, { imageAspect: input.imageAspect, override, closestDistance: nearest });
     const pointsHundredths = computePointsHundredths({
       points: question.points,
       correctness: score.correctness,

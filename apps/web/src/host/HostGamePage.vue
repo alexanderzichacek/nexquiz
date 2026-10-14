@@ -6,16 +6,18 @@ import AppWordmark from "@/components/AppWordmark.vue";
 import BaseButton from "@/components/BaseButton.vue";
 import { format, sk } from "@/i18n/sk";
 import { TIMER_DANGER_SECONDS } from "@/lib/serverClock";
+import { StageAudio } from "@/lib/sounds";
 import { useCountdown } from "@/lib/useCountdown";
+import { useFullscreen } from "@/lib/useFullscreen";
 import { useAuthStore } from "@/stores/auth";
 import { useConfirmStore } from "@/stores/confirm";
 import { useToastStore } from "@/stores/toast";
 import HostFinished from "./game/HostFinished.vue";
 import HostLeaderboard from "./game/HostLeaderboard.vue";
 import HostLobby from "./game/HostLobby.vue";
+import HostPage from "./game/HostPage.vue";
 import HostQuestion from "./game/HostQuestion.vue";
 import HostReveal from "./game/HostReveal.vue";
-import { StageAudio } from "./game/sounds";
 import { useHostGame } from "./game/useHostGame";
 
 /**
@@ -54,8 +56,11 @@ async function run(kind: NonNullable<typeof busy.value>, action: () => Promise<b
 // ---- sounds (host only) ----
 const audio = new StageAudio();
 const lobbyMusic = ref(false);
+// A music question or a text question with an audio clip (e.g. fill in the lyrics).
 const isMusicQuestion = computed(
-  () => (view.value?.state === "QUESTION" || view.value?.state === "REVEAL") && view.value.question?.type === "music",
+  () =>
+    (view.value?.state === "QUESTION" || view.value?.state === "REVEAL") &&
+    view.value.question?.media.audioId !== undefined,
 );
 
 function toggleLobbyMusic(): void {
@@ -151,6 +156,10 @@ onBeforeUnmount(() => {
   audio.dispose();
 });
 
+// Fullscreen toggle (TV / projector); `F` toggles it too. Hidden where the API is missing (iPhone Safari).
+const fullscreen = useFullscreen({ shortcut: true });
+const fullscreenLabel = computed(() => (fullscreen.active.value ? sk.game.fullscreenExit : sk.game.fullscreenEnter));
+
 const showWordmark = computed(() => view.value?.state === "LOBBY" || view.value?.state === "FINISHED");
 const canEnd = computed(() => view.value !== null && view.value.state !== "FINISHED");
 </script>
@@ -175,6 +184,20 @@ const canEnd = computed(() => view.value !== null && view.value.state !== "FINIS
         </button>
         <button v-if="canEnd" type="button" class="host-game__tool" :disabled="busy === 'end'" @click="endGame">
           {{ sk.game.endGame }}
+        </button>
+        <button
+          v-if="fullscreen.supported"
+          type="button"
+          class="host-game__tool host-game__tool--icon"
+          :aria-label="fullscreenLabel"
+          :title="format(sk.game.fullscreenTitle, { label: fullscreenLabel })"
+          aria-keyshortcuts="F"
+          @click="fullscreen.toggle"
+        >
+          <svg class="host-game__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path v-if="fullscreen.active.value" d="M9 3v6H3M15 3v6h6M9 21v-6H3M15 21v-6h6" />
+            <path v-else d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6" />
+          </svg>
         </button>
       </div>
     </header>
@@ -216,6 +239,14 @@ const canEnd = computed(() => view.value !== null && view.value.state !== "FINIS
         @end-question="run('endQuestion', game.endQuestion)"
       />
 
+      <HostPage
+        v-else-if="view.state === 'PAGE' && view.page"
+        :key="`p${view.page.index}`"
+        :page="view.page"
+        :advancing="busy === 'next'"
+        @next="run('next', game.next)"
+      />
+
       <HostReveal
         v-else-if="view.state === 'REVEAL' && view.question"
         :key="`r${view.question.index}`"
@@ -250,13 +281,14 @@ const canEnd = computed(() => view.value !== null && view.value.state !== "FINIS
 </template>
 
 <style scoped>
+/* The stage never scrolls: every screen shares 100dvh (DESIGN.md "Responzivita"). */
 .host-game {
   display: flex;
   flex-direction: column;
   height: 100dvh;
   overflow: hidden;
-  padding: var(--stage-pad);
-  gap: var(--s-4);
+  padding: var(--stage-pad-y) var(--stage-pad);
+  gap: var(--stage-gap);
 }
 
 .host-game__top {
@@ -286,6 +318,23 @@ const canEnd = computed(() => view.value !== null && view.value.state !== "FINIS
   color: var(--text-muted);
   font-size: var(--fs-host-label);
   cursor: pointer;
+}
+
+.host-game__tool--icon {
+  display: inline-grid;
+  place-items: center;
+  min-width: var(--btn-h);
+  padding: 0;
+}
+
+.host-game__icon {
+  width: var(--icon);
+  height: var(--icon);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .host-game__tool:hover:not(:disabled),

@@ -3,14 +3,16 @@ import type { GameFinishedEvent } from "@nexquiz/shared";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 import GamePodium from "@/components/GamePodium.vue";
+import RankingTable from "@/components/RankingTable.vue";
 import { sk } from "@/i18n/sk";
-import { formatScore } from "@/lib/format";
+import { rankingRest } from "@/lib/leaderboard";
 import { prefersReducedMotion } from "@/lib/motion";
 import ConfettiCanvas from "./ConfettiCanvas.vue";
 
 /**
  * End of the game: podium revealed 3rd → 2nd → 1st with a short pause,
- * confetti + fanfare for the winner, the full ranking and the CSV export.
+ * confetti + fanfare for the winner and the CSV export on the left, the rest
+ * of the ranking (4th place onward) on the right, all within one screen.
  */
 const props = defineProps<{ finished: GameFinishedEvent; gameId: string }>();
 const emit = defineEmits<{ winner: [] }>();
@@ -53,34 +55,39 @@ onMounted(() => {
 
 onBeforeUnmount(() => timers.forEach((t) => window.clearTimeout(t)));
 
+/** Players below the podium; with many of them the table flows into 2 columns. */
+const rest = computed(() => rankingRest(props.finished.ranking, props.finished.podium));
+/** Above this many rows a single column would need to scroll on a 1366 × 768 projector. */
+const MULTI_COLUMN_FROM = 9;
+
 const csvUrl = computed(() => `/api/games/${encodeURIComponent(props.gameId)}/results?format=csv`);
 </script>
 
 <template>
-  <section class="finished">
-    <h1 class="finished__title">{{ sk.game.podiumTitle }}</h1>
+  <section class="finished" :class="{ 'finished--split': rest.length > 0 }">
+    <div class="finished__main">
+      <h1 class="finished__title">{{ sk.game.podiumTitle }}</h1>
 
-    <GamePodium v-if="places > 0" :podium="finished.podium" :revealed="revealed" size="host" />
-    <p v-else class="finished__empty">{{ sk.game.noPlayersRanking }}</p>
+      <GamePodium v-if="places > 0" :podium="finished.podium" :revealed="revealed" size="host" class="finished__podium" />
+      <p v-else class="finished__empty">{{ sk.game.noPlayersRanking }}</p>
 
-    <section v-if="finished.ranking.length > 0" class="finished__ranking">
-      <h2 class="finished__subtitle">{{ sk.game.fullRanking }}</h2>
-      <ol class="finished__list">
-        <li v-for="r in finished.ranking" :key="r.playerId" class="finished__row">
-          <span class="finished__rank tabular">{{ r.rank }}.</span>
-          <span class="finished__name">{{ r.nickname }}</span>
-          <span class="finished__score tabular">{{ formatScore(r.score) }}</span>
-        </li>
-      </ol>
-    </section>
+      <footer class="finished__actions">
+        <a class="finished__link finished__link--primary" :href="csvUrl" download>{{ sk.game.exportCsv }}</a>
+        <RouterLink class="finished__link" :to="{ name: 'host-results', params: { id: gameId } }">
+          {{ sk.game.resultsDetail }}
+        </RouterLink>
+        <RouterLink class="finished__link" :to="{ name: 'host-quizzes' }">{{ sk.game.backToQuizzes }}</RouterLink>
+      </footer>
+    </div>
 
-    <footer class="finished__actions">
-      <a class="finished__link finished__link--primary" :href="csvUrl" download>{{ sk.game.exportCsv }}</a>
-      <RouterLink class="finished__link" :to="{ name: 'host-results', params: { id: gameId } }">
-        {{ sk.game.resultsDetail }}
-      </RouterLink>
-      <RouterLink class="finished__link" :to="{ name: 'host-quizzes' }">{{ sk.game.backToQuizzes }}</RouterLink>
-    </footer>
+    <RankingTable
+      v-if="rest.length > 0"
+      :entries="rest"
+      :title="sk.game.otherPlaces"
+      size="host"
+      :multi-column="rest.length >= MULTI_COLUMN_FROM"
+      class="finished__rest"
+    />
 
     <ConfettiCanvas v-if="confetti" />
   </section>
@@ -90,9 +97,18 @@ const csvUrl = computed(() => `/api/games/${encodeURIComponent(props.gameId)}/re
 .finished {
   display: flex;
   flex-direction: column;
-  gap: var(--s-5);
+  gap: var(--s-6);
   flex: 1;
   min-height: 0;
+}
+
+.finished__main {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--s-5);
+  flex: 1;
+  min-width: 0;
 }
 
 .finished__title {
@@ -106,58 +122,24 @@ const csvUrl = computed(() => `/api/games/${encodeURIComponent(props.gameId)}/re
   text-align: center;
 }
 
-.finished__ranking {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-2);
-  width: min(100%, var(--stage-board-w));
-  margin: 0 auto;
-  min-height: 0;
+/* wide host screen: podium on the left, the rest of the ranking on the right, no page scroll */
+@media (min-width: 901px) {
+  .finished--split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .finished--split .finished__main {
+    min-height: 0;
+  }
 }
 
-.finished__subtitle {
-  font-size: var(--fs-host-label);
-  font-weight: var(--fw-semibold);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-}
-
-.finished__list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-1);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  max-height: var(--stage-ranking-h);
-  overflow-y: auto;
-}
-
-.finished__row {
-  display: flex;
-  gap: var(--s-4);
-  padding: var(--s-2) var(--s-4);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-}
-
-.finished__rank {
-  min-width: var(--rank-col);
-  font-weight: var(--fw-black);
-  color: var(--text-muted);
-}
-
-.finished__name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.finished__score {
-  font-weight: var(--fw-bold);
+/* narrow window: stacked, the stage scrolls */
+@media (max-width: 900px) {
+  .finished--split {
+    flex: none;
+  }
 }
 
 .finished__actions {

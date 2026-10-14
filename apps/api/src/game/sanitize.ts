@@ -1,8 +1,11 @@
 import {
+  pageShowEventSchema,
   questionStartEventSchema,
   type CorrectAnswer,
   type MediaRef,
   type Option,
+  type Page,
+  type PageShowEvent,
   type PublicField,
   type Question,
   type QuestionStartEvent,
@@ -12,6 +15,9 @@ export interface QuestionStartInput {
   question: Question;
   index: number;
   total: number;
+  /** 1-based question number and number of questions (pages are not counted). */
+  number: number;
+  count: number;
   /** Presentation order from `game:{pin}:shuffle:{idx}` (null = authored order). */
   order: readonly string[] | null;
   deadline: number;
@@ -22,6 +28,7 @@ function publicMedia(media: MediaRef | undefined): MediaRef {
   const out: MediaRef = {};
   if (media?.imageId !== undefined) out.imageId = media.imageId;
   if (media?.audioId !== undefined) out.audioId = media.audioId;
+  if (media?.videoId !== undefined) out.videoId = media.videoId;
   return out;
 }
 
@@ -52,6 +59,8 @@ export function buildQuestionStart(input: QuestionStartInput): QuestionStartEven
   const base = {
     index: input.index,
     total: input.total,
+    number: input.number,
+    count: input.count,
     prompt: question.prompt,
     media: publicMedia(question.media),
     timeLimit: question.timeLimit,
@@ -78,7 +87,12 @@ export function buildQuestionStart(input: QuestionStartInput): QuestionStartEven
       event = { ...base, type: "hotspot" };
       break;
     case "text":
-      event = { ...base, type: "text", fields: publicFields(question.data.fields) };
+      event = {
+        ...base,
+        type: "text",
+        fields: publicFields(question.data.fields),
+        ...(question.data.clip ? { clip: { start: question.data.clip.start, duration: question.data.clip.duration } } : {}),
+      };
       break;
     case "music":
       event = {
@@ -88,22 +102,41 @@ export function buildQuestionStart(input: QuestionStartInput): QuestionStartEven
         clip: { start: question.data.clip.start, duration: question.data.clip.duration },
       };
       break;
+    case "number":
+      // Mode and tolerance are a hint for players; `data.answer` is never copied.
+      event = { ...base, type: "number", mode: question.data.mode, tolerance: question.data.tolerance };
+      break;
   }
   return questionStartEventSchema.parse(event);
 }
 
 /**
- * Player variant of `question:start`: drops `media.audioId`. Audio plays on
- * the host screen only, and the uploaded file keeps its tags (artist /
- * title = the answer of a music question), so players must never learn its
- * id before reveal. Images stay (hotspot needs them on the phone).
+ * Player variant of `question:start`: drops `media.audioId`. An uploaded
+ * audio file keeps its tags (artist / title = the answer of a music
+ * question, the song of a lyrics question) and the whole song (the lyrics to
+ * fill in), so players never learn its id; a player with sound on their own
+ * device gets only the cut, tag-free clip (`GET /api/games/:pin/questions/:index/clip`).
+ * Images and the video id stay: the hotspot needs the image on the phone and
+ * the video plays there only when the player turned sound and video on.
  */
 export function forPlayers(event: QuestionStartEvent): QuestionStartEvent;
 export function forPlayers(event: QuestionStartEvent | null): QuestionStartEvent | null;
 export function forPlayers(event: QuestionStartEvent | null): QuestionStartEvent | null {
   if (!event) return null;
-  const media: MediaRef = event.media.imageId === undefined ? {} : { imageId: event.media.imageId };
+  const media: MediaRef = {};
+  if (event.media.imageId !== undefined) media.imageId = event.media.imageId;
+  if (event.media.videoId !== undefined) media.videoId = event.media.videoId;
   return { ...event, media };
+}
+
+/** `page:show` – the same content for the host and the players; only the image id is exposed. */
+export function buildPageShow(page: Page, index: number): PageShowEvent {
+  return pageShowEventSchema.parse({
+    index,
+    title: page.title,
+    description: page.description,
+    media: page.media?.imageId === undefined ? {} : { imageId: page.media.imageId },
+  });
 }
 
 /** Correct answer of a question – sent only after the question ended. */
@@ -138,5 +171,7 @@ export function buildCorrectAnswer(question: Question): CorrectAnswer {
             : { key: f.key, label: f.label, accepted: [...f.accepted] },
         ),
       };
+    case "number":
+      return { type: "number", answer: question.data.answer, mode: question.data.mode, tolerance: question.data.tolerance };
   }
 }

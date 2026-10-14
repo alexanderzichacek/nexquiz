@@ -5,6 +5,7 @@ import {
   IMAGE_MIME_TYPES,
   type MediaKind,
   type MediaUploadResponse,
+  VIDEO_MIME_TYPES,
 } from "@nexquiz/shared";
 import { parseBuffer } from "music-metadata";
 import sharp from "sharp";
@@ -15,6 +16,7 @@ import type { MediaStorage } from "./storage.js";
 
 type ImageMime = keyof typeof IMAGE_MIME_TYPES;
 type AudioMime = keyof typeof AUDIO_MIME_TYPES;
+type VideoMime = keyof typeof VIDEO_MIME_TYPES;
 
 /** sharp output format → stored MIME type. */
 const IMAGE_FORMATS = { jpeg: "image/jpeg", png: "image/png", webp: "image/webp" } as const;
@@ -28,14 +30,25 @@ function isAudioMime(mime: string): mime is AudioMime {
   return Object.hasOwn(AUDIO_MIME_TYPES, mime);
 }
 
+function isVideoMime(mime: string): mime is VideoMime {
+  return Object.hasOwn(VIDEO_MIME_TYPES, mime);
+}
+
 function isImageFormat(format: string | undefined): format is ImageFormat {
   return format !== undefined && Object.hasOwn(IMAGE_FORMATS, format);
+}
+
+/** MP4 has an `ftyp` box at offset 4, WebM (EBML) starts with `1A 45 DF A3`. */
+function hasVideoSignature(mime: VideoMime, data: Buffer): boolean {
+  if (mime === "video/mp4") return data.length > 12 && data.toString("latin1", 4, 8) === "ftyp";
+  return data.length > 4 && data.readUInt32BE(0) === 0x1a45dfa3;
 }
 
 /** Media kind of an allowed upload MIME type, or null. */
 export function mediaKindOf(mime: string): MediaKind | null {
   if (isImageMime(mime)) return "image";
   if (isAudioMime(mime)) return "audio";
+  if (isVideoMime(mime)) return "video";
   return null;
 }
 
@@ -43,6 +56,7 @@ export function mediaKindOf(mime: string): MediaKind | null {
 export function extensionOf(mime: string): string | null {
   if (isImageMime(mime)) return IMAGE_MIME_TYPES[mime];
   if (isAudioMime(mime)) return AUDIO_MIME_TYPES[mime];
+  if (isVideoMime(mime)) return VIDEO_MIME_TYPES[mime];
   return null;
 }
 
@@ -53,9 +67,10 @@ export function mediaUrl(id: string): string {
 export interface MediaLimits {
   imageBytes: number;
   audioBytes: number;
+  videoBytes: number;
 }
 
-/** Upload processing: validation, image resize (sharp), audio duration (music-metadata). */
+/** Upload processing: validation, image resize (sharp), audio / video duration (music-metadata). */
 export class MediaService {
   constructor(
     readonly storage: MediaStorage,
@@ -71,6 +86,10 @@ export class MediaService {
     if (isAudioMime(mime)) {
       if (data.length > this.limits.audioBytes) throw new AppError("PAYLOAD_TOO_LARGE");
       return this.uploadAudio(mime, data);
+    }
+    if (isVideoMime(mime)) {
+      if (data.length > this.limits.videoBytes) throw new AppError("PAYLOAD_TOO_LARGE");
+      return this.uploadVideo(mime, data);
     }
     throw new AppError("UNSUPPORTED_MEDIA_TYPE");
   }
@@ -153,5 +172,40 @@ export class MediaService {
     return duration === undefined
       ? { id, url: mediaUrl(id), kind: "audio", mime }
       : { id, url: mediaUrl(id), kind: "audio", mime, duration };
+  }
+
+  /**
+   * Videos are stored untouched (no transcoding). The container is checked by
+   * its magic bytes and parsed with `music-metadata`, which must find a video
+   * track. The duration is best effort: it is missing for MP4 files without
+   * an audio track.
+   */
+  private async uploadVideo(declared: VideoMime, data: Buffer): Promise<MediaUploadResponse> {
+    if (!hasVideoSignature(declared, data)) throw new AppError("UNSUPPORTED_MEDIA_TYPE");
+    const metadata = await parseBuffer(data, { mimeType: declared, size: data.length }, { duration: true }).catch(
+      () => null,
+    );
+    if (!metadata || metadata.format.hasVideo === false) throw new AppError("UNSUPPORTED_MEDIA_TYPE");
+    const rawDuration = metadata.format.duration;
+    const duration =
+      rawDuration !== undefined && Number.isFinite(rawDuration) ? Math.round(rawDuration * 100) / 100 : undefined;
+    const id = randomUUID();
+    const name = `${id}.${VIDEO_MIME_TYPES[declared]}`;
+    await this.storage.save(name, data);
+    try {
+      await this.repo.insert({
+        id,
+        kind: "video",
+        mime: declared,
+        sizeBytes: data.length,
+        durationS: duration === undefined ? null : duration.toFixed(2),
+      });
+    } catch (err) {
+      await this.storage.remove(name);
+      throw err;
+    }
+    return duration === undefined
+      ? { id, url: mediaUrl(id), kind: "video", mime: declared }
+      : { id, url: mediaUrl(id), kind: "video", mime: declared, duration };
   }
 }

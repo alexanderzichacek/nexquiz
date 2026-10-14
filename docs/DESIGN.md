@@ -24,7 +24,8 @@ Host game screen škáluje písmo cez `clamp()` a `vw`, takže vyzerá rovnako n
 
 - Názov aplikácie je **NexQuiz**.
 - Wordmark je textový: `Nex` vo farbe `--text` a `Quiz` vo farbe `--primary`, font `--font`, váha 800, letter-spacing −0.02em.
-- Wordmark sa zobrazuje v hlavičke landing stránky, v hlavičke host admin stránok a malý v rohu host game screen (lobby a pódium).
+- Logo (znak `N` v zaoblenom štvorci `--primary` + väčší wordmark, `--fs-logo` 40 px, znak `--logo-mark` 56 px) je na landing stránke vycentrované navrchu a nahrádza claim; samostatná hlavička tam nie je.
+- Wordmark sa zobrazuje v hlavičke host admin stránok a malý v rohu host game screen (lobby a pódium).
 - Favicon je písmeno `N` v zaoblenom štvorci `--primary`.
 - `<title>` má tvar `NexQuiz` (landing) a `NexQuiz – {názov stránky}` (ostatné), počas hry napríklad `NexQuiz – PIN 123 456`.
 
@@ -97,22 +98,26 @@ Host game screen škáluje písmo cez `clamp()` a `vw`, takže vyzerá rovnako n
 
 Tokeny sú v `apps/web/src/styles/tokens.css`. Okrem základných sú tam odvodené tokeny, aby komponenty nemuseli mať natvrdo zadané veľkosti:
 
-- veľkosti písma podľa tabuľky Typografia: `--fs-player-*`, `--fs-host-*` (clamp hodnoty), `--fs-editor-*`, `--fs-body`, `--fs-label`, `--fs-small`, `--fs-pin-input` (28 px), `--fs-wordmark`, `--fs-claim`,
+- veľkosti písma podľa tabuľky Typografia: `--fs-player-*`, `--fs-host-*` (clamp hodnoty), `--fs-editor-*`, `--fs-body`, `--fs-label`, `--fs-small`, `--fs-pin-input` (28 px), `--fs-wordmark`, `--fs-logo`, `--fs-claim`,
 - váhy `--fw-regular` / `--fw-semibold` / `--fw-bold` / `--fw-black`,
 - rozmery `--tap-min` (48 px), `--btn-h`, `--btn-h-player` (52 px), `--input-h` (52 px), `--focus-ring` (2 px), `--ring-selected` (3 px), `--border-w`,
 - šírky `--w-landing` (960 px), `--w-player` (480 px),
-- `--motion` (1, pri `prefers-reduced-motion: reduce` 0) ako násobič posunov a mierky animácií.
+- avatar hráča: `--avatar-bg`, `--avatar-ink` (oči, ústa, okuliare, cylinder), `--avatar-light` (golier, pruhy), pleť `--avatar-skin-1…5`, vlasy `--avatar-hair-1…4`, veľkosti `--avatar-sm`, `--avatar-chip`, `--avatar-row`, `--avatar-podium`, `--avatar-podium-player`, `--avatar-waiting`, `--avatar-preview`, `--avatar-pick`; tričká používajú `--opt-n`,
+- `--motion` (1, pri `prefers-reduced-motion: reduce` 0) ako násobič posunov a mierky animácií,
+- prispôsobenie dlhých textov (pozri Responzivita – „Nič sa neposúva“): kroky `--fit-m` / `--fit-s` / `--fit-xs` (triedy `.fit-*` nastavia `--fit`), minimá `--fs-player-min` / `--fs-player-prompt-min`, rozloženie host obrazovky `--stage-pad-y`, `--stage-gap`, `--stage-tile-pad`, `--stage-media-min`, `--stage-tiles-max`, `--fs-host-row` a na playerovi `--h-player-tile`, `--h-player-grid-tile`, `--fs-player-grid-option`, `--h-player-card-max`.
 
 ## Typografia
 
 | Rola | Player (mobil) | Host screen | Editor |
 |---|---|---|---|
-| Text otázky | 20–22 px / 600 | `clamp(28px, 3.6vw, 64px)` / 700 | 18 px / 600 |
-| Text možnosti | 17 px / 600 | `clamp(20px, 2.2vw, 40px)` / 600 | 15 px |
-| PIN | 32 px / 800, mono | `clamp(64px, 9vw, 160px)` / 800, mono, letter-spacing .08em | – |
-| Odpočet | 18 px / 700 | `clamp(32px, 4vw, 72px)` / 800 | – |
-| Body / text | 16 px / 400 | `clamp(18px, 1.6vw, 28px)` | 14–15 px |
-| Label | 13 px / 600, uppercase, letter-spacing .04em | `clamp(14px, 1.2vw, 20px)` | 12–13 px |
+| Text otázky | 20–22 px / 600 | `clamp(24px, min(3.6vw, 6.4vh), 64px)` / 700 | 18 px / 600 |
+| Text možnosti | 17 px / 600 | `clamp(18px, min(2.2vw, 3.9vh), 40px)` / 600 | 15 px |
+| PIN | 32 px / 800, mono | `clamp(48px, min(9vw, 16vh), 160px)` / 800, mono, letter-spacing .08em | – |
+| Odpočet | 18 px / 700 | `clamp(28px, min(4vw, 7.1vh), 72px)` / 800 | – |
+| Body / text | 16 px / 400 | `clamp(16px, min(1.6vw, 2.85vh), 28px)` | 14–15 px |
+| Label | 13 px / 600, uppercase, letter-spacing .04em | `clamp(13px, min(1.2vw, 2.1vh), 20px)` | 12–13 px |
+
+Host veľkosti počítajú so šírkou aj výškou (`min(vw, vh)`), aby sa obrazovka zmestila aj v nižšom okne. Dlhé texty otázky a možností sa zmenšujú krokmi `--fit-*` (pozri Responzivita).
 
 Čísla (skóre, odpočet, PIN) používajú `font-variant-numeric: tabular-nums`, aby neposkakovali.
 
@@ -123,21 +128,28 @@ Tokeny sú v `apps/web/src/styles/tokens.css`. Okrem základných sú tam odvode
 | Komponent | Popis |
 |---|---|
 | **Button** | `primary`, `secondary`, `ghost`, `danger`. Na playerovi min. výška 52 px a full-width primárne akcie. Stav `loading` so spinnerom, `disabled` |
-| **AnswerTile** | Farba `--opt-n` + ikona tvaru + písmeno + text. Stavy: `idle`, `selected` (biely 3 px ring + ✓), `correct`, `wrong` (stlmená opacity .35), `disabled` |
+| **AnswerTile** | Farba `--opt-n` + ikona tvaru + písmeno + text (na playerovi riadok zoznamu, pri krátkych možnostiach dlaždica s odznakom tvaru a písmena v rohu – `badge`). Stavy: `idle`, `selected` (biely 3 px ring + ✓), `correct`, `wrong` (stlmená opacity .35), `disabled` |
 | **TimerRing** | Kruhový odpočet (SVG stroke) s číslom v strede. Posledných 5 s sa sfarbí na `--danger` a jemne pulzuje |
 | **TimerBar** | Tenký pruh pod hlavičkou na playerovi (šetrí miesto) |
 | **AnsweredCounter** | `12 / 18` + mini progress bar (host) |
-| **PlayerChip** | Prezývka v „pilulke“ s náhodnou farbou podľa hashu mena. V lobby sa objaví s pop animáciou, odpojený hráč má opacity .4 |
+| **PlayerChip** | Avatar + prezývka v „pilulke“ s náhodnou farbou podľa hashu mena. V lobby sa objaví s pop animáciou, odpojený hráč má opacity .4 |
+| **PlayerAvatar** | Vlastné jednoduché SVG v kruhu: telo (5 variantov tvaru a farby trička), hlava (5 variantov pleti a účesu), voliteľne okuliare, klobúk a fúzy (po 3 variantoch). Je dekoratívny (`aria-hidden`), informáciu nesie prezývka vedľa neho. Veľkosť cez `--avatar-size` |
+| **AvatarPicker** | Krok prezývky: veľký náhľad, tlačidlo „🎲 Náhodne“, prepínače častí (Telo · Hlava · Okuliare · Klobúk · Fúzy) a varianty aktívnej časti ako celé avatary (tap target ≥ 48 px, zvolený má 3 px ring). Voliteľné časti majú aj „Bez“. Štartuje s náhodným telom a hlavou bez doplnkov |
 | **PinDisplay** | PIN rozdelený `123 456`, kopírovanie kliknutím (editor) |
 | **QrCard** | Biele pozadie (vždy, kvôli čitateľnosti skenerom), QR + krátka URL pod ním |
-| **SortableList** | Položky s úchytom ⠿ a šípkami ↑↓. Počas ťahania sa položka zdvihne (`--shadow-lg`, scale 1.02) |
+| **SortableList** | Položky s úchytom ⠿ a šípkami ↑↓. Počas ťahania sa položka zdvihne (`--shadow-lg`, scale 1.02). S `slotArrows` šípky vykreslí obsah položky sám (zoznam otázok) |
 | **HotspotImage** | Obrázok `object-fit: contain`. Značka ťuku je terčík 28 px s bielym okrajom, s možnosťou presunu ťahaním. V editore kruhy s úchytom pre polomer |
 | **HotspotHeatmap** | Reveal: cieľ ako poloprehľadný zelený kruh, ťuky hráčov ako bodky 10 px (zelené / červené) |
+| **HotspotResult** | Player výsledok `hotspot`: obrázok so správnymi oblasťami (zelené kruhy) a vlastným ťukom (rovnaký terčík ako pri odpovedi) + legenda „Správne miesto · Tvoj ťuk“ |
 | **TextAnswerGroups** | Reveal pre text/music: riadky `odpoveď × počet` s prepínačom ✓/✗. Automaticky uznané majú zelený ľavý okraj, manuálne zmenené ikonu ✋ |
 | **AudioControl** | Iba host: veľké tlačidlo ▶/❚❚, replay klipu, progress klipu, ekvalizér animácia počas prehrávania |
-| **ResultBanner** | Player: celoplošný stav `Správne` / `Čiastočne` / `Nesprávne` + body (`+0.85`) |
-| **LeaderboardRow** | Poradie, prezývka, skóre, delta (`+0.85`), zmena poradia (▲2 / ▼1) |
-| **Podium** | Tri stĺpce (2-1-3), postupné odhalenie od 3. miesta |
+| **MediaToggle** | Player: prepínač (switch, `role="switch"`, celý riadok je tap target ≥ 48 px) „🔊 Zvuk a video na tomto zariadení“, predvolene vypnutý. Na kroku prezývky s nápovedou pod ním, na čakacích obrazovkách (lobby, medzi otázkami) bez nej |
+| **PlayerClip** | Player so zapnutým zvukom: jeden riadok ▶/❚❚ (`--primary`), ↺ replay (oba 48 px), nad progress barom stav „🎵 Počúvaj“ / „Načítavam ukážku…“ / „Ukážku sa nepodarilo načítať.“. Nahrádza text „🎵 Počúvaj“ pri `music` a `text` s audiom |
+| **NumberGuesses** | Reveal pre `number`: riadky `✓/✗ hodnota · o rozdiel · počet× · body / bez bodov`, od najbližšieho tipu k správnemu číslu, max. 10 riadkov a zhrnutie zvyšku |
+| **ResultBanner** | Player: celoplošný stav `Správne` / `Čiastočne` / `Nesprávne` + body (`+850`); pri `hotspot` s `HotspotResult`, pri `number` vlastný tip a správne číslo |
+| **LeaderboardRow** | Poradie, avatar + prezývka, skóre, delta (`+850`), zmena poradia (▲2 / ▼1) |
+| **Podium** | Tri stĺpce (2-1-3) s avatarom a prezývkou, postupné odhalenie od 3. miesta. Na playerovi má vlastný stĺpec prezývku v `--primary` a štítok „Ty“ |
+| **RankingTable** | Koniec hry: ďalšie miesta od 4. (poradie, avatar, prezývka, skóre, tabulárne číslice). Varianty `host` / `player`, voliteľne 2 stĺpce (po stĺpcoch). Scrolluje vo vlastnej oblasti (focusovateľná pre klávesnicu). Vlastný riadok: tučné písmo, rámček `--primary`, štítok „Ty“, `aria-current` |
 | **Toast** | Chyby a info (reconnect, „Odpoveď odoslaná“) |
 | **ConnectionBadge** | Player: malý indikátor v rohu pri strate spojenia „Pripájam…“ |
 | **AppHeader** | Wordmark vľavo. Na host admin stránkach vpravo tlačidlo **Odhlásiť** (`ghost`) |
@@ -164,9 +176,8 @@ Tvary sú inline SVG ikony, vlastné jednoduché geometrické tvary.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ NexQuiz                                                      │
 │                                                              │
-│               Kvízy pre partiu. Bez inštalácie.              │
+│                        [N] NexQuiz                           │
 │                                                              │
 │  ┌──────────────────────────┐  ┌──────────────────────────┐  │
 │  │ Pripojiť sa do hry       │  │ Prihlásenie hosta        │  │
@@ -247,9 +258,9 @@ Rovnaká hlavička (`AppHeader`) a pätička (`AppFooter`) sú na všetkých adm
 │ ⠿ 5 ✎ Text    │ 🎵 track.mp3  [▶] 3:42           │ ( ) prísna       │
 │ ⠿ 6 ♫ Hudba ● │ Klip: od [0:45] dĺžka [15] s     │ (•) normálna     │
 │               │                                  │ ( ) voľná        │
-│ [+ Otázka]    │ Interpret  (0.5 b)               │                  │
+│ [+ Otázka]    │ Interpret  (500 b)               │                  │
 │               │ [Metallica ×] [+ alias]          │ ─ Kvíz ─         │
-│               │ Názov skladby (0.5 b)            │ ☑ Bonus za čas   │
+│               │ Názov skladby (500 b)            │ ☑ Bonus za čas   │
 │               │ [Nothing Else Matters ×][+ alias]│ ☑ Leaderboard    │
 │               │                                  │                  │
 │               │ [Náhľad hráča]   Uložené ✓       │ [▶ Spustiť hru]  │
@@ -257,8 +268,11 @@ Rovnaká hlavička (`AppHeader`) a pätička (`AppFooter`) sú na všetkých adm
 ```
 
 - Aktívna otázka v zozname má podfarbenie `--surface-2` a ľavý okraj `--primary`.
+- Položka zoznamu otázok má celú šírku pre číslo, ikonu typu, typ a text otázky (oba skrátené s „…“). Akcie ↑ ↓ ⧉ × sú v samostatnom riadku iba pod aktívnou otázkou (úzky panel 260 px by ich inak nezmestil vedľa textu). Úchyt ⠿ ostáva pri každej položke.
 - Otázka s chybou validácie má v zozname červenú bodku a chybové hlášky sa zobrazia inline pri poli.
 - Stav autosave vpravo dole: `Ukladám…` → `Uložené ✓` / `Chyba ukladania – skúsiť znova` (klik zopakuje uloženie). Kým má kvíz chyby validácie, zobrazí sa `Neuložené – oprav chyby`.
+
+- **Stránka** (položka bez otázky, ikona ▭): v zozname nemá číslo, v strednom paneli je nadpis, popis a obrázok (aspoň jedno vyplnené, inak chyba „Pridaj nadpis, popis alebo obrázok.“). Pravý panel nezobrazuje čas ani body.
 
 Type-specific editory:
 - **single / multi:** riadky možností s farebnou značkou, prepínač správnosti (radio pri `single`, checkbox pri `multi`), max. 6 možností.
@@ -266,6 +280,7 @@ Type-specific editory:
 - **hotspot:** upload obrázka, klik pridá kruh, ťahanie úchytu mení polomer, `Delete` zmaže kruh.
 - **text:** aliasy ako chipy (Enter pridá ďalší) + pole „Otestuj odpoveď“, ktoré okamžite ukáže ✓/✗ podľa fuzzy pravidiel.
 - **music:** audio upload s mini prehrávačom, výber klipu (od/dĺžka) s tlačidlom prehrať klip, dve polia aliasov s váhami a rovnaké pole „Otestuj odpoveď“.
+- **number:** pole „Správne číslo“ (ikona typu `#`), dve radio voľby „Najbližší tip“ / „Tip v tolerancii“ s krátkym vysvetlením a pri tolerancii pole „Tolerancia (±)“.
 
 ---
 
@@ -282,19 +297,19 @@ Type-specific editory:
 │   PIN:   123 456                           │  ▓▓▓▓▓▓▓▓  │    │
 │                                            └────────────┘    │
 │ ──────────────────────────────────────────────────────────── │
-│  👥 8 hráčov                                                 │
+│  👥 8 hráčov                                     [Spustiť ▶] │
 │  (Jano) (Zuzka) (Peťo) (Mišo) (Katka) (Ivo) (Lucia) (Dano)  │
-│                                                  [Spustiť ▶] │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 - QR má min. 30 % výšky obrazovky, aby sa dal naskenovať z diaľky.
+- Názov kvízu (max. 2 riadky) je v ľavom stĺpci nad URL a PIN-om, **Spustiť** v riadku s počtom hráčov. Pri veľa hráčoch sa posúva iba oblasť s čipmi, nie stránka.
 
 ### Otázka – choice typy
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ 3 / 15                                       ◯ 24   12/18 ✓ │
+│ 3 / 15 [Ukončiť otázku teraz]                ◯ 24   12/18 ✓ │
 │                                                              │
 │          Ktoré mesto je hlavným mestom Austrálie?            │
 │                     [ obrázok, ak je ]                       │
@@ -308,33 +323,63 @@ Type-specific editory:
 └──────────────────────────────────────────────────────────────┘
 ```
 
+- **Ukončiť otázku teraz** je v hornom riadku vedľa `3 / 15` (nie v pätičke), aby otázka mala viac výšky.
+- Text otázky sa pri dlhom znení zmenšuje (krok podľa dĺžky) a ako posledná možnosť sa oreže na 4 riadky. Obrázok / video zaberá zvyšnú výšku (`object-fit: contain`, min. `--stage-media-min`), dlaždice si výšku delia rovnomerne (riadky `1fr`) a ich text sa zmenšuje podľa najdlhšej možnosti a orezáva na riadky, ktoré sa do dlaždice zmestia.
+
 Varianty pre ostatné typy:
-- **order:** zamiešané položky ako statický zoznam (host ich iba zobrazuje).
+- **order:** zamiešané položky ako statický zoznam (host ich iba zobrazuje), pri viac ako 4 položkách v dvoch stĺpcoch.
 - **hotspot:** obrázok na maximálnu možnú plochu, bez cieľov.
 - **text:** iba otázka + médium, dole hint „Napíšte odpoveď na svojom zariadení“.
 - **music:** veľká animovaná ikona 🎵 / ekvalizér, `AudioControl` a pod tým popisky polí „Interpret · Názov skladby“.
+- **number:** otázka + médium, dole hint „Napíšte číslo na svojom zariadení“ a pravidlo („Body získa najbližší tip“ / „…s odchýlkou najviac ±1“). Správne číslo sa neukazuje.
+
+### Stránka
+
+- Vycentrovaný nadpis (`--fs-host-pin`, `--fw-black`), pod ním popis (`--fs-host-option`, `--text-muted`) a obrázok (max. 45 vh). Vpravo dole **Ďalej**. Bez odpočtu, bez počítadla odpovedí.
+- Dlhý nadpis a popis sa zmenšujú, obrázok sa zmenší na voľnú výšku a veľmi dlhý popis sa posúva vo vlastnom boxe.
+- Na mobile hráča sa zobrazí ten istý obsah (nadpis `--fs-player-pin`, popis `--fs-player-question`, obrázok max. 40 dvh) bez ovládacích prvkov.
 
 ### Reveal
 
-- **choice:** dlaždice sa premenia na stĺpcový graf (výška = počet hlasov). Správne majú ✓ a plnú farbu, nesprávne sú stlmené.
-- **order:** správne poradie s očíslovaním + „Priemerná úspešnosť 64 %“.
+- **choice:** dlaždice sa premenia na stĺpcový graf (výška = počet hlasov, graf zaberá voľnú výšku). Správne majú ✓ a plnú farbu, nesprávne sú stlmené. Text možnosti pod stĺpcom má max. 2 riadky.
+- **order:** správne poradie s očíslovaním (pri viac ako 4 položkách v dvoch stĺpcoch) + „Priemerná úspešnosť 64 %“.
 - **hotspot:** `HotspotHeatmap`.
-- **text / music:** správne odpovede veľkým písmom a pod nimi `TextAnswerGroups` (pri music v dvoch stĺpcoch: Interpret | Názov). Host tu klikaním uznáva odpovede. Zmena sa prejaví okamžite s jemným flashom riadku.
+- **number:** správne číslo veľkým písmom s pravidlom a pod ním `NumberGuesses` (viac ako 5 riadkov v dvoch stĺpcoch).
+- **text / music:** správne odpovede veľkým písmom (max. 2 riadky, aliasy tiež) a pod nimi `TextAnswerGroups` (pri music v dvoch stĺpcoch: Interpret | Názov). Host tu klikaním uznáva odpovede. Zmena sa prejaví okamžite s jemným flashom riadku.
+- Dlhé zoznamy (poradie, tipy, skupiny odpovedí) sa posúvajú vo vlastnom boxe, stránka nikdy.
 
 ### Leaderboard a pódium
 
 ```
 ┌──────────────────────────────────────────────┐
 │  Poradie po 3. otázke                        │
-│  1  Zuzka        3.42   +0.91   ▲1           │
-│  2  Jano         3.10   +0.50   ▼1           │
-│  3  Peťo         2.75   +1.00   ▲3           │
+│  1  Zuzka        3420   +910   ▲1             │
+│  2  Jano         3100   +500   ▼1             │
+│  3  Peťo         2750  +1000   ▲3             │
 │  …                                            │
 └──────────────────────────────────────────────┘
 ```
 
 - Riadky sa animovane presunú na nové pozície (FLIP), skóre sa načíta count-up animáciou (600 ms).
 - Pódium odhaľuje 3. → 2. → 1. miesto s krátkou pauzou a pri víťazovi spustí konfety.
+
+Koniec hry (host):
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│          Koniec hry          │ ĎALŠIE MIESTA                 │
+│            (☺)               │  4. (☺) Mišo  2100 │ 15. …    │
+│      (☺) ┌─────┐             │  5. (☺) Katka 1980 │ 16. …    │
+│     ┌────┤  1  ├────┐        │  6. …              │ …        │
+│     │ 2  │     │ 3  │        │  …                 │ 25. …    │
+│     └────┴─────┴────┘        │                               │
+│ [Exportovať CSV] [Detail] [← Späť na kvízy]                  │
+└──────────────────────────────────────────────────────────────┘
+```
+
+- Na širokej obrazovke (> 900 px) sú vedľa seba: vľavo nadpis, pódium a akcie (CSV, detail, späť), vpravo tabuľka ďalších miest (od 4. miesta, `RankingTable`). Všetko sa zmestí na jednu obrazovku (`100dvh`), bez scrollu stránky.
+- Od 9 riadkov sa tabuľka láme do 2 stĺpcov po stĺpcoch (4.–14. | 15.–25.), ak má každý stĺpec aspoň `--ranking-col-min`. Ak sa ani tak nezmestí, scrolluje sa iba oblasť tabuľky. Pri ~25 hráčoch sa zmestí na 1920 × 1080 aj 1366 × 768 bez scrollu.
+- Pri ≤ 3 hráčoch tabuľka nie je a pódium je na stred. Pod 900 px šírky sú bloky pod sebou a scrolluje sa stage.
 
 ---
 
@@ -344,12 +389,15 @@ Varianty pre ostatné typy:
  Join                 Prezývka            Čakanie
 ┌────────────────┐   ┌────────────────┐   ┌────────────────┐
 │                │   │  PIN 123 456   │   │                │
-│   Zadaj PIN    │   │                │   │   Si v hre! ✓  │
-│ [ 1 2 3 4 5 6 ]│   │  Tvoja prezývka│   │                │
+│   Zadaj PIN    │   │  (☺) [🎲]      │   │   Si v hre! ✓  │
+│ [ 1 2 3 4 5 6 ]│   │Telo|Hlava|Okul.│   │      (☺)       │
+│                │   │ ◯ ◯ ◯ ◯ ◯      │   │                │
+│                │   │  Tvoja prezývka│   │                │
 │                │   │ [Jano_______]  │   │     Jano       │
-│                │   │                │   │                │
-│ [  Pokračovať ]│   │ [   Vstúpiť  ] │   │ Čaká sa na     │
-└────────────────┘   └────────────────┘   │ štart…         │
+│                │   │ (○ ) 🔊 Zvuk a │   │                │
+│                │   │ video na tomto…│   │ Čaká sa na     │
+│ [  Pokračovať ]│   │ [   Vstúpiť  ] │   │ štart…         │
+└────────────────┘   └────────────────┘   │ (○ ) 🔊 Zvuk…  │
                                           └────────────────┘
 
  Single / Multi       Poradie             Hotspot
@@ -371,7 +419,7 @@ Varianty pre ostatné typy:
  Text                 Hudba               Výsledok
 ┌────────────────┐   ┌────────────────┐   ┌────────────────┐
 │ 6/15 ▬▬▬▬▬░ 25 │   │ 7/15 ▬▬▬▬░ 22  │   │   ◐ Čiastočne  │
-│ Ako sa volá    │   │ 🎵 Počúvaj     │   │     +0.50      │
+│ Ako sa volá    │   │ 🎵 Počúvaj     │   │     +500       │
 │ najvyšší štít  │   │                │   │                │
 │ Tatier?        │   │ Interpret      │   │ Interpret ✓    │
 │                │   │ [metalica____] │   │ Názov     ✗    │
@@ -383,7 +431,7 @@ Varianty pre ostatné typy:
 ```
 
 Detaily:
-- Hlavička otázky je sticky: `index/total`, `TimerBar`, zostávajúce sekundy.
+- Hlavička otázky: `index/total`, `TimerBar`, zostávajúce sekundy. Obrazovka otázky sa neposúva (pozri Responzivita), preto hlavička nemusí byť sticky.
 - Pri `single` sa odpoveď odošle ťuknutím, dlaždica dostane stav `selected` a ostatné sa stlmia.
 - Po odoslaní sa zobrazí overlay „Odpoveď odoslaná ✓ – čaká sa na ostatných“, pozadie ostane viditeľné a stlmené.
 - Pri `text` a `music`:
@@ -391,7 +439,9 @@ Detaily:
   - Enter v prvom poli presunie fokus na druhé,
   - zobrazená klávesnica nesmie prekryť tlačidlo Odoslať (`visualViewport` / `100dvh`).
 - `ResultBanner` má pozadie podľa stavu: `--success` / `--warning` / `--danger` + ikona.
+- Pri `number`: input s desatinnou klávesnicou (`inputmode="decimal"`), vľavo tlačidlo **±** (52 × 52 px, na decimálnej klávesnici iOS chýba mínus), nad ním nápoveda podľa režimu. Neplatný vstup ukáže chybu a deaktivuje Odoslať.
 - Pri vypršaní času bez odpovede sa zobrazí „Čas vypršal“ a 0 bodov.
+- **Koniec hry:** zhora „Koniec hry! Skončil si {rank}. z {total}.“, vlastné skóre, pódium a pod ním tabuľka ďalších miest (od 4. miesta, `RankingTable`). Vlastný riadok aj vlastný stĺpec na pódiu sú zvýraznené nielen farbou: tučné písmo, rámček `--primary` a štítok „Ty“. Tabuľka scrolluje vo vlastnej oblasti (max. `--player-ranking-h`) a pri načítaní posunie vlastný riadok do stredu. Je to jediná player obrazovka, kde môže na nízkom mobile scrollovať aj stránka; tlačidlo **Späť na úvod** je vtedy prilepené dole (sticky).
 
 ---
 
@@ -401,27 +451,31 @@ Detaily:
 |---|---|---|
 | Hráč vstúpi do lobby | PlayerChip pop (scale .6 → 1) | `--t` |
 | Štart otázky | Otázka fade+slide hore, dlaždice staggered (40 ms) | `--t-slow` |
-| Posledných 5 s | TimerRing pulz, tick zvuk na hoste | – |
+| Posledných 5 s | TimerRing pulz, tick zvuk na hoste (a u hráča so zapnutým zvukom) | – |
 | Odhalenie | Nesprávne sa stlmia, správne „bounce“ | `--t-slow` |
 | Skóre | Count-up | 600 ms |
 | Leaderboard | FLIP presun riadkov | 500 ms |
 | Víťaz | Konfety (canvas) | 2 s |
 
 - `prefers-reduced-motion: reduce` vypne presuny a konfety a ponechá iba fade.
-- **Zvuky** hrajú iba na hoste: lobby loop (voliteľný, vypínač v rohu), tick pri posledných 5 s, gong na koniec otázky, fanfára na pódiu.
+- **Zvuky** hrajú na hoste: lobby loop (voliteľný, vypínač v rohu), tick pri posledných 5 s, gong na koniec otázky, fanfára na pódiu.
 - Pri `music` otázke sa lobby hudba a tick automaticky stlmia.
 - Prvé prehratie zvuku na hoste vyžaduje interakciu (autoplay policy). Tlačidlo **Spustiť** v lobby slúži zároveň na odomknutie audio kontextu.
-- Player zvuky nemá, má iba haptiku: `navigator.vibrate(30)` pri odoslaní a vzor 2× pri nesprávnej odpovedi (ak to zariadenie podporuje).
-- Zvuky hosta sa generujú cez WebAudio (`apps/web/src/host/game/sounds.ts`), bez externých audio súborov. Vypínač hudby (`♪ Hudba v lobby`) je v pravom hornom rohu host game screen; zapnutá hudba hrá v lobby aj počas hry, okrem `music` otázky (otázka aj reveal) a pódia.
+- Player má predvolene iba haptiku: `navigator.vibrate(30)` pri odoslaní a vzor 2× pri nesprávnej odpovedi (ak to zariadenie podporuje).
+- **Zvuk a video na zariadení hráča** (opt-in cez `MediaToggle`, pre hráča mimo miestnosti): tick posledných 5 s (nie pri otázke s klipom), gong na koniec otázky a fanfára pri konci hry, video otázky (s ovládaním, `playsinline`; ak prehliadač nedovolí štart so zvukom, spustí sa stlmené) a audio klip cez `PlayerClip`. Lobby loop hráč nemá. Zapnutie prepínača je zároveň gesto, ktoré odomkne audio; po reloade ho odomkne prvé ťuknutie kdekoľvek. Na iPhone sa nastaví `navigator.audioSession.type = "playback"`, aby zvuk hral aj pri tichom režime (ak to Safari podporuje).
+- Zvuky sa generujú cez WebAudio (`apps/web/src/lib/sounds.ts`, host aj player), bez externých audio súborov. Vypínač hudby (`♪ Hudba v lobby`) je v pravom hornom rohu host game screen; zapnutá hudba hrá v lobby aj počas hry, okrem `music` otázky (otázka aj reveal) a pódia.
 - `AudioControl` sa pri štarte `music` otázky pokúsi klip spustiť automaticky; ak to prehliadač zablokuje (napr. po obnovení stránky bez interakcie), host ho spustí tlačidlom ▶. Prehráva sa iba úsek `clip.start` … `clip.start + clip.duration`.
 
 ### Implementačné poznámky (game screen a player)
 
-- Host game screen má vpravo hore aj **Ukončiť hru** (`host:end`, s potvrdením) vo všetkých fázach okrem pódia. Počas zobrazenia nastaví `data-theme="dark"` na `<html>`, aby boli tmavé aj dialógy a toasty (renderujú sa mimo `.stage`).
+- Host game screen má vpravo hore aj **Ukončiť hru** (`host:end`, s potvrdením) vo všetkých fázach okrem pódia a ikonové tlačidlo **Celá obrazovka** (vlastné SVG, `aria-label` „Celá obrazovka“ / „Ukončiť celú obrazovku“, tooltip s „(F)“) vo všetkých fázach. Používa Fullscreen API na celý dokument (`document.documentElement.requestFullscreen`), stav sleduje cez `fullscreenchange` a kde API chýba (iPhone Safari), tlačidlo sa nezobrazí. Kláves `F` ho prepína tiež (nie pri písaní do poľa, s modifikátorom ani pri otvorenom dialógu). Odchod zo stránky celú obrazovku ukončí. Počas zobrazenia nastaví `data-theme="dark"` na `<html>`, aby boli tmavé aj dialógy a toasty (renderujú sa mimo `.stage`).
 - Grid choice dlaždíc na hoste: ≤ 4 možnosti 2 stĺpce (2 × 2), 5–6 možností 3 stĺpce v dvoch riadkoch (na 16:9 sa tak zmestia lepšie ako 3 riadky).
 - Pódium s menej ako 3 hráčmi odhaľuje iba obsadené miesta (od najnižšieho). Pri `prefers-reduced-motion` sa zobrazí naraz a bez konfiet.
 - Hotspot značku na playerovi je po položení možné posúvať aj šípkami (fokus na značke), ťuk do letterboxu mimo obrázka sa ignoruje.
 - `ResultBanner` pri `text` / `music` ukazuje pre každé pole vlastnú odpoveď s ✓ / ✗ a prvý uznávaný alias ako správnu odpoveď.
+- `ResultBanner` pri `hotspot` ukazuje obrázok otázky so správnymi oblasťami a vlastným ťukom (`HotspotResult`), aby hráč videl, kde bolo správne miesto.
+- `ResultBanner` pri `number` ukazuje vlastný tip a správne číslo. Čísla sa formátujú so slovenskou desatinnou čiarkou a medzerou po tisícoch od piatich cifier (`2026`, `12 450`), aby rok nevyzeral ako `2 026`.
+- Avatar sa zobrazuje v lobby (`PlayerChip`), na čakacej obrazovke hráča, v leaderboarde, na pódiu a v tabuľke ďalších miest na konci hry (host aj player). V histórii výsledkov (`/host/results/:id`) nie je, neukladá sa do Postgresu.
 
 ---
 
@@ -442,19 +496,26 @@ Tón je krátky, priateľský, bez technických hlášok.
 | Situácia | Text |
 |---|---|
 | Neplatný PIN | „Hru s týmto PIN-om sme nenašli.“ |
+| Rate limit | „Príliš veľa pokusov, skús to o chvíľu.“ |
+| Server nedostupný (overenie PIN-u) | „Nepodarilo sa spojiť so serverom. Skontroluj pripojenie a skús to znova.“ |
 | Obsadená prezývka | „Túto prezývku už niekto má, skús inú.“ |
 | Odoslané | „Odpoveď odoslaná ✓“ |
 | Neskoro | „Čas vypršal.“ |
 | Výpadok spojenia | „Pripájam sa znova…“ |
 | Vyhodený hráč | „Host ťa odstránil z hry.“ |
 | Nesprávne heslo | „Nesprávne heslo.“ |
-| Claim na landing stránke | „Kvízy pre partiu. Bez inštalácie.“ |
 | Koniec | „Koniec hry! Skončil si {rank}. z {total}.“ |
 
 ## Responzivita
 
-- **Landing:** pod 720 px sú karty pod sebou (Join prvá), nad 720 px vedľa seba v gride 2 × 1 s max. šírkou 960 px.
-- **Player:** mobile-first. Pri šírke ≥ 600 px je obsah max. 480 px na stred s `--surface` kartou. Používaj `100dvh` (adresný riadok na mobile) a `env(safe-area-inset-*)` (notch, home indicator).
-- **Choice dlaždice na playerovi:** pri 2–4 možnostiach mriežka 2 × 2 (ak sú texty krátke, do 20 znakov) alebo stĺpec. Pri 5–6 možnostiach vždy stĺpec.
-- **Host screen:** grid 2 × 2 (≤ 4 možnosti) alebo 2 × 3 (5–6). Pod 900 px šírky (host na notebooku v okne) prepne na stĺpec.
+- **Landing:** pod 720 px sú karty pod sebou (Join prvá) s menším paddingom (`--s-4`), nad 720 px vedľa seba v gride 2 × 1 s max. šírkou 960 px. Stĺpce sú `minmax(0, 1fr)` a inputy `width: 100%`, aby PIN input (28 px mono) nerozšíril stránku na úzkom mobile (overené na 320 a 375 px).
+- **Player:** mobile-first. Pri šírke aj výške ≥ 600 px je obsah max. 480 px na stred s `--surface` kartou (počas hry s výškou `min(100dvh − 2 × --s-7, --h-player-card-max)`). Telefón na šírku (výška < 600 px) ostáva bez karty a počas hry využije celú šírku. Používaj `100dvh` (adresný riadok na mobile) a `env(safe-area-inset-*)` (notch, home indicator).
+- **Nič sa neposúva (host aj player počas hry):** obrazovka je presne `100dvh` (na playerovi mínus výška zobrazenej klávesnice z `visualViewport`), stĺpec flex/grid s `min-height: 0`. Médium sa zmenšuje (`object-fit: contain`). Na hoste si dlaždice delia zvyšnú výšku rovnomerne (riadky `1fr`), na playerovi majú choice odpovede prirodzenú výšku a pružný je obrázok (pozri nižšie). Dlhé texty sa zmenšujú krokmi podľa dĺžky (`components/choiceLayout.ts`: `textFit` → triedy `.fit-m` / `.fit-s` / `.fit-xs`, násobiče `--fit-m` .84 / `--fit-s` .7 / `--fit-xs` .58, na playerovi nie pod `--fs-player-min`), ako posledná možnosť sa orežú s „…“ (`.line-clamp`; dlaždice si počet riadkov, ktoré sa zmestia, zmerajú samy – `AnswerTile` s `fill`). Vlastný box sa smie posúvať iba pri dlhých zoznamoch: zoradenie na playerovi, čipy hráčov v lobby, tipy a skupiny odpovedí pri reveal, veľmi dlhý popis stránky. **Odoslať** je vždy viditeľné. Leaderboard má 10 rovnako vysokých riadkov (`--fs-host-row`).
+- **Choice možnosti na playerovi** (`playerChoiceLayout`): odpovede majú prirodzenú výšku a sú dole nad **Odoslať** (zóna palca), nikdy sa nenaťahujú na celú obrazovku; voľnú výšku nad nimi zaberá obrázok otázky (bez obrázka ostane medzera pod otázkou).
+  - **Zoznam** (predvolený, ak má niektorá možnosť viac ako 12 znakov): jeden riadok na možnosť, tvar + písmeno v pevnom stĺpci vľavo, text vpravo v tom istom riadku, zarovnaný vľavo a vertikálne na stred, `--fs-player-option`, max. 3 riadky. Riadky sú rovnako vysoké (podľa najvyššieho), jednoriadkový má cca `--h-player-tile`. Písmo sa zmenší až pri najdlhšej možnosti nad 70 znakov.
+  - **Mriežka** iba pre krátke možnosti (všetky do 12 znakov: čísla, jedno slovo): 2 stĺpce, dlaždica vysoká `--h-player-grid-tile` (72–112 px), text väčší (`--fs-player-grid-option`) a na stred, tvar + písmeno ako malý odznak v ľavom hornom rohu. Nepárna posledná dlaždica ide cez oba stĺpce.
+  - Na šírku (výška < 600 px): zoznam v 2 stĺpcoch, mriežka všetky možnosti v jednom riadku (5–6 v 3 stĺpcoch), obrázok otázky vľavo od odpovedí.
+  - Keď sa ani tak nezmestia (dlhá otázka + 6 dlhých možností na malom mobile), blok odpovedí sa zmenší a dlaždice si samy orežú text na riadky, ktoré sa zmestia (`AnswerTile` s `fill`), **Odoslať** ostane viditeľné.
+- **Host screen:** grid 2 × 2 (≤ 4 možnosti) alebo 2 × 3 (5–6). Pod 600 px šírky prepne na stĺpec. Funguje na 16:9 (1920 × 1080, 1366 × 768, 1280 × 720) v okne aj na celej obrazovke.
+- **Koniec hry na hoste:** nad 900 px pódium vľavo a tabuľka ďalších miest vpravo (1–2 stĺpce), pod 900 px pod sebou.
 - **Editor:** pod 1024 px sa pravý panel presunie pod editor a ľavý zoznam sa zbalí do rozbaľovacieho menu.

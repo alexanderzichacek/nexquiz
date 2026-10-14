@@ -11,6 +11,7 @@ import FieldError from "./FieldError.vue";
 import HotspotEditor from "./HotspotEditor.vue";
 import MediaUpload from "./MediaUpload.vue";
 import MusicEditor from "./MusicEditor.vue";
+import NumberEditor from "./NumberEditor.vue";
 import OrderEditor from "./OrderEditor.vue";
 import PlayerPreview from "./PlayerPreview.vue";
 import SaveStatus from "./SaveStatus.vue";
@@ -28,6 +29,7 @@ const previewOpen = ref(false);
 const errors = computed(() => editor.errorsOf(question.value.id));
 const kinds = computed(() => mediaKindsFor(question.value.type));
 const imageId = computed(() => question.value.media?.imageId);
+const videoId = computed(() => question.value.media?.videoId);
 const promptId = computed(() => `prompt-${question.value.id}`);
 
 async function onTypeChange(event: Event): Promise<void> {
@@ -50,13 +52,31 @@ async function onTypeChange(event: Event): Promise<void> {
   editor.changeType(question.value.id, next);
 }
 
+/** A question has an image or a video, so uploading one replaces the other. */
 function onImageUploaded(media: MediaUploadResponse): void {
-  question.value.media = { ...question.value.media, imageId: media.id };
+  const next = { ...question.value.media, imageId: media.id };
+  delete next.videoId;
+  question.value.media = next;
+}
+
+/** Audio and video would play at once on the host screen, so a video replaces the audio of a `text` question (and its clip). */
+function onVideoUploaded(media: MediaUploadResponse): void {
+  const next = { ...question.value.media, videoId: media.id };
+  delete next.imageId;
+  delete next.audioId;
+  if (question.value.type === "text") delete question.value.data.clip;
+  question.value.media = next;
 }
 
 function removeImage(): void {
   const media = { ...question.value.media };
   delete media.imageId;
+  question.value.media = media.audioId ? media : undefined;
+}
+
+function removeVideo(): void {
+  const media = { ...question.value.media };
+  delete media.videoId;
   question.value.media = media.audioId ? media : undefined;
 }
 </script>
@@ -87,10 +107,16 @@ function removeImage(): void {
     </div>
 
     <div v-if="kinds.image && !kinds.imageRequired" class="qe__media">
-      <span class="label">{{ sk.editor.imageOptional }}</span>
+      <span class="label">{{ kinds.video ? sk.editor.mediaOptional : sk.editor.imageOptional }}</span>
       <img v-if="imageId" :src="mediaUrl(imageId)" alt="" class="qe__image" />
-      <MediaUpload kind="image" :has-media="!!imageId" @uploaded="onImageUploaded" @remove="removeImage" />
+      <video v-else-if="videoId" :src="mediaUrl(videoId)" class="qe__image" controls preload="metadata"></video>
+      <div class="qe__media-actions">
+        <MediaUpload kind="image" :has-media="!!imageId" @uploaded="onImageUploaded" @remove="removeImage" />
+        <MediaUpload v-if="kinds.video" kind="video" :has-media="!!videoId" @uploaded="onVideoUploaded" @remove="removeVideo" />
+      </div>
+      <p v-if="kinds.video" class="hint">{{ sk.editor.mediaVideoHint }}</p>
       <FieldError :message="errors['media.imageId']" />
+      <FieldError :message="errors['media.videoId']" />
     </div>
 
     <ChoiceEditor
@@ -102,6 +128,7 @@ function removeImage(): void {
     <HotspotEditor v-else-if="question.type === 'hotspot'" v-model="question" :errors="errors" />
     <TextEditor v-else-if="question.type === 'text'" v-model="question" :errors="errors" />
     <MusicEditor v-else-if="question.type === 'music'" v-model="question" :errors="errors" />
+    <NumberEditor v-else-if="question.type === 'number'" :key="question.id" v-model="question" :errors="errors" />
 
     <FieldError :message="errors.type" />
 
@@ -146,6 +173,12 @@ function removeImage(): void {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  gap: var(--s-2);
+}
+
+.qe__media-actions {
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--s-2);
 }
 

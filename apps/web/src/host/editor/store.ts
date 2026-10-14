@@ -1,14 +1,18 @@
 import {
+  isQuestion,
+  questionCount,
+  questionNumber,
   quizDtoSchema,
   quizUpdateRequestSchema,
   type Question,
   type QuestionType,
+  type QuizItem,
   type QuizUpdateRequest,
 } from "@nexquiz/shared";
 import { defineStore } from "pinia";
 import { computed, ref, watch } from "vue";
 import { ApiError, apiRequest } from "@/lib/api";
-import { changeQuestionType, cloneJson, createQuestion, duplicateQuestion } from "./defaults";
+import { changeQuestionType, cloneJson, createPage, createQuestion, duplicateQuestion } from "./defaults";
 import { validateQuiz, type ErrorMap, type QuizValidation } from "./validation";
 
 /** Autosave debounce (LOGIC.md: 1 s). */
@@ -39,9 +43,15 @@ export const useQuizEditorStore = defineStore("quizEditor", () => {
   let inFlight: Promise<void> | null = null;
 
   const validation = computed<QuizValidation>(() => (draft.value ? validateQuiz(draft.value) : EMPTY_VALIDATION));
-  const questions = computed<Question[]>(() => draft.value?.questions ?? []);
+  /** Items of the quiz in order: questions and pages. */
+  const questions = computed<QuizItem[]>(() => draft.value?.questions ?? []);
   const selectedIndex = computed(() => questions.value.findIndex((q) => q.id === selectedId.value));
-  const selected = computed<Question | null>(() => questions.value[selectedIndex.value] ?? null);
+  const selected = computed<QuizItem | null>(() => questions.value[selectedIndex.value] ?? null);
+  /** The selected item when it is a question (a page has no question settings). */
+  const selectedQuestion = computed<Question | null>(() => (selected.value && isQuestion(selected.value) ? selected.value : null));
+  /** Number of questions (pages are not counted) and the number of the selected one. */
+  const totalQuestions = computed(() => questionCount(questions.value));
+  const selectedNumber = computed(() => (selectedIndex.value < 0 ? 0 : questionNumber(questions.value, selectedIndex.value)));
 
   function errorsOf(questionId: string): ErrorMap {
     return validation.value.questions[questionId] ?? NO_ERRORS;
@@ -155,12 +165,20 @@ export const useQuizEditorStore = defineStore("quizEditor", () => {
     selectedId.value = id;
   }
 
-  function addQuestion(type: QuestionType): void {
+  /** Inserts `item` after the selected one (or at the end) and selects it. */
+  function insert(item: QuizItem): void {
     if (!draft.value) return;
-    const question = createQuestion(type);
     const at = selectedIndex.value >= 0 ? selectedIndex.value + 1 : draft.value.questions.length;
-    draft.value.questions.splice(at, 0, question);
-    selectedId.value = question.id;
+    draft.value.questions.splice(at, 0, item);
+    selectedId.value = item.id;
+  }
+
+  function addQuestion(type: QuestionType): void {
+    insert(createQuestion(type));
+  }
+
+  function addPage(): void {
+    insert(createPage());
   }
 
   function duplicate(id: string): void {
@@ -184,7 +202,7 @@ export const useQuizEditorStore = defineStore("quizEditor", () => {
     }
   }
 
-  function setQuestions(next: Question[]): void {
+  function setQuestions(next: QuizItem[]): void {
     if (draft.value) draft.value.questions = next;
   }
 
@@ -192,7 +210,7 @@ export const useQuizEditorStore = defineStore("quizEditor", () => {
     if (!draft.value) return;
     const index = draft.value.questions.findIndex((q) => q.id === id);
     const question = draft.value.questions[index];
-    if (!question || question.type === type) return;
+    if (!question || question.type === "page" || question.type === type) return;
     draft.value.questions.splice(index, 1, changeQuestionType(cloneJson(question), type));
   }
 
@@ -206,6 +224,9 @@ export const useQuizEditorStore = defineStore("quizEditor", () => {
     questions,
     selectedIndex,
     selected,
+    selectedQuestion,
+    totalQuestions,
+    selectedNumber,
     errorsOf,
     isDirty,
     reset,
@@ -214,6 +235,7 @@ export const useQuizEditorStore = defineStore("quizEditor", () => {
     flush,
     select,
     addQuestion,
+    addPage,
     duplicate,
     remove,
     setQuestions,

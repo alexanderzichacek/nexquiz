@@ -4,6 +4,7 @@ import { computed } from "vue";
 import { format, sk } from "@/i18n/sk";
 import { formatScore } from "@/lib/format";
 import { podiumOrder } from "@/lib/leaderboard";
+import PlayerAvatar from "./PlayerAvatar.vue";
 
 /**
  * Podium: three columns in the order 2 – 1 – 3. `revealed` says how many
@@ -15,7 +16,7 @@ const props = withDefaults(
     podium: readonly RankingEntry[];
     revealed?: number;
     size?: "host" | "player";
-    /** Highlights the own column on the player's end screen. */
+    /** Highlights the own column on the player's end screen (color + „Ty“ label). */
     highlightId?: string | null;
   }>(),
   { revealed: 3, size: "player", highlightId: null },
@@ -41,7 +42,9 @@ function isRevealed(rank: number): boolean {
       ]"
       :aria-hidden="!isRevealed(entry.rank) || undefined"
     >
+      <PlayerAvatar :avatar="entry.avatar" class="podium__avatar" />
       <span class="podium__name">{{ entry.nickname }}</span>
+      <span v-if="highlightId !== null && entry.playerId === highlightId" class="podium__you">{{ sk.play.you }}</span>
       <span class="podium__score tabular">{{ formatScore(entry.score) }}</span>
       <span class="podium__block">
         <span class="podium__rank tabular">{{ entry.rank }}</span>
@@ -80,6 +83,14 @@ function isRevealed(rank: number): boolean {
   transform: translateY(calc(var(--s-6) * var(--motion)));
 }
 
+.podium--host .podium__avatar {
+  --avatar-size: var(--avatar-podium);
+}
+
+.podium--player .podium__avatar {
+  --avatar-size: var(--avatar-podium-player);
+}
+
 .podium__name {
   max-width: 100%;
   overflow: hidden;
@@ -113,6 +124,15 @@ function isRevealed(rank: number): boolean {
 
 .podium__col--own .podium__name {
   color: var(--primary);
+}
+
+.podium__you {
+  padding: 0 var(--s-2);
+  border-radius: var(--radius-sm);
+  background: var(--primary);
+  color: var(--primary-contrast);
+  font-size: var(--fs-small);
+  font-weight: var(--fw-bold);
 }
 
 .podium__rank {

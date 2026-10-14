@@ -21,3 +21,16 @@ export function podiumOrder<T extends { rank: number }>(podium: readonly T[]): T
   const [first, second, third] = sorted;
   return [second, first, third].filter((e): e is T => e !== undefined);
 }
+
+/**
+ * Final ranking without the podium players (4th place onward), in rank order.
+ * Excludes by `playerId`, so a tie on the 3rd place that did not fit on the
+ * podium still shows up in the rest.
+ */
+export function rankingRest<T extends { playerId: string; rank: number }>(
+  ranking: readonly T[],
+  podium: readonly Pick<T, "playerId">[],
+): T[] {
+  const onPodium = new Set(podium.map((p) => p.playerId));
+  return byRank(ranking.filter((r) => !onPodium.has(r.playerId)));
+}

@@ -43,7 +43,7 @@ export async function mediaRoutes(app: FastifyInstance, opts: { media: MediaFile
       file.file.resume();
       throw new AppError("UNSUPPORTED_MEDIA_TYPE");
     }
-    // Throws a 413 when the multipart limit (largest of the two kinds) is exceeded.
+    // Throws a 413 when the multipart limit (largest of the kinds) is exceeded.
     const data = await file.toBuffer();
     const result = await media.upload(file.mimetype, data);
     req.log.info({ mediaId: result.id, kind: result.kind, bytes: data.length }, "media uploaded");

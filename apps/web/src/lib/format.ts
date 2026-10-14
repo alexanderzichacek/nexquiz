@@ -1,10 +1,16 @@
-/** Number formatting of scores, as in DESIGN.md (`3.42`, `+0.85`). */
+/** Whole number with a non-breaking space between thousands (`12 450`). */
+function groupThousands(whole: number): string {
+  return String(whole).replace(/\B(?=(\d{3})+(?!\d))/g, "\u00A0");
+}
+
+/** Number formatting of scores, as in DESIGN.md (`1 250`, `+850`): scores are whole points. */
 export function formatScore(value: number): string {
-  return value.toFixed(2);
+  const whole = Math.round(value);
+  return `${whole < 0 ? "−" : ""}${groupThousands(Math.abs(whole))}`;
 }
 
 export function formatDelta(value: number): string {
-  return `${value >= 0 ? "+" : "−"}${Math.abs(value).toFixed(2)}`;
+  return `${value >= 0 ? "+" : "−"}${groupThousands(Math.abs(Math.round(value)))}`;
 }
 
 /** Correctness 0–1 → whole percent. */

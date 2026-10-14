@@ -1,16 +1,30 @@
 import {
   ANSWER_GRACE_MS,
+  DEFAULT_AVATAR,
   GAME_STATES,
   leaderboardEventSchema,
   normalize,
+  pageShowEventSchema,
   playerResultEventSchema,
   questionRevealEventSchema,
   questionStartEventSchema,
   type GameStateName,
+  type Quiz,
+  type QuizSettings,
 } from "@nexquiz/shared";
 import { describe, expect, it } from "vitest";
 import { AppError } from "../errors.js";
-import { createHarness, Q, sampleQuiz, type Harness } from "../test/helpers.js";
+import {
+  AUDIO_ID,
+  createHarness,
+  numberQuestion,
+  PAGE_ID,
+  Q,
+  sampleQuiz,
+  samplePage,
+  type Harness,
+  type SampleQuiz,
+} from "../test/helpers.js";
 import { GameService } from "./GameService.js";
 import { canTransition, TRANSITIONS } from "./stateMachine.js";
 
@@ -52,14 +66,20 @@ describe("state machine table", () => {
     expect(allowed.sort()).toEqual(
       [
         "LOBBY→QUESTION",
+        "LOBBY→PAGE",
         "LOBBY→FINISHED",
         "QUESTION→REVEAL",
         "QUESTION→FINISHED",
         "REVEAL→LEADERBOARD",
         "REVEAL→QUESTION",
+        "REVEAL→PAGE",
         "REVEAL→FINISHED",
         "LEADERBOARD→QUESTION",
+        "LEADERBOARD→PAGE",
         "LEADERBOARD→FINISHED",
+        "PAGE→QUESTION",
+        "PAGE→PAGE",
+        "PAGE→FINISHED",
       ].sort(),
     );
     expect(TRANSITIONS.FINISHED).toEqual([]);
@@ -232,6 +252,137 @@ describe("GameService transitions", () => {
   });
 });
 
+/** `quiz` with the points of one question changed (the sample questions are worth 1 point). */
+function withPoints(quiz: SampleQuiz, index: number, points: number): SampleQuiz {
+  return { ...quiz, questions: quiz.questions.map((q, i) => (i === index ? { ...q, points } : q)) };
+}
+
+const PAGE_2_ID = "bbbbbbbb-0000-4000-8000-000000000002";
+
+/** single (0), page (1), multi (2), page (3). */
+function pagedQuiz(settings: Partial<QuizSettings> = {}, first: "question" | "page" = "question"): Quiz {
+  const quiz = sampleQuiz(settings);
+  const [single, multi] = quiz.questions;
+  if (!single || !multi) throw new Error("fixture");
+  const body = [single, samplePage(PAGE_ID), multi, samplePage(PAGE_2_ID)];
+  return { ...quiz, questions: first === "page" ? [samplePage(PAGE_2_ID), ...body.slice(0, 3)] : body };
+}
+
+describe("pages between questions", () => {
+  it("shows a page after the leaderboard and numbers only the questions", async () => {
+    const h = createHarness({}, pagedQuiz());
+    const { pin, players } = await setup(h);
+    await h.games.start(pin);
+    const first = questionStartEventSchema.parse(h.notifier.last("questionStart")?.payload);
+    expect(first).toMatchObject({ index: 0, total: 4, number: 1, count: 2 });
+
+    await h.games.endQuestion(pin);
+    await h.games.next(pin);
+    expect(await state(h, pin)).toBe("LEADERBOARD");
+    expect(leaderboardEventSchema.parse(h.notifier.last("leaderboard")?.payload)).toMatchObject({ index: 0, number: 1 });
+
+    await h.games.next(pin);
+    expect(await state(h, pin)).toBe("PAGE");
+    const page = pageShowEventSchema.parse(h.notifier.last("pageShow")?.payload);
+    expect(page).toEqual({
+      index: 1,
+      title: "Category: Sport",
+      description: "Next come the sport questions.",
+      media: { imageId: "11111111-1111-4111-8111-111111111111" },
+    });
+    // No timer, and the snapshots of both roles carry the page instead of a question.
+    expect(h.scheduler.timers.has(pin)).toBe(false);
+    const host = await h.games.attachHost(pin);
+    expect(host).toMatchObject({ state: "PAGE", currentIndex: 1, question: null, page });
+    const player = await h.games.getPlayerState(pin, at(players, 0).playerId);
+    expect(player).toMatchObject({ state: "PAGE", question: null, page, hasAnswered: false, result: null });
+
+    await h.games.next(pin);
+    expect(await state(h, pin)).toBe("QUESTION");
+    const second = questionStartEventSchema.parse(h.notifier.last("questionStart")?.payload);
+    expect(second).toMatchObject({ index: 2, total: 4, number: 2, count: 2 });
+
+    await h.games.endQuestion(pin);
+    await h.games.next(pin);
+    expect(leaderboardEventSchema.parse(h.notifier.last("leaderboard")?.payload)).toMatchObject({ index: 2, number: 2 });
+    await h.games.next(pin);
+    expect(await state(h, pin)).toBe("PAGE");
+    expect(h.notifier.of("pageShow")).toHaveLength(2);
+
+    // A page can be the last item.
+    await h.games.next(pin);
+    expect(await state(h, pin)).toBe("FINISHED");
+    // Pages are neither scored nor persisted.
+    expect(h.persistence.progress).toHaveLength(2);
+    expect(h.persistence.finished).toHaveLength(1);
+  });
+
+  it("can start with a page and marks the game as started", async () => {
+    const h = createHarness({}, pagedQuiz({}, "page"));
+    const { pin, gameId } = await setup(h);
+    await h.games.start(pin);
+    expect(await state(h, pin)).toBe("PAGE");
+    expect(h.persistence.started).toEqual([gameId]);
+    expect(h.notifier.of("questionStart")).toHaveLength(0);
+
+    await h.games.next(pin);
+    expect(await state(h, pin)).toBe("QUESTION");
+    expect(questionStartEventSchema.parse(h.notifier.last("questionStart")?.payload)).toMatchObject({
+      index: 1,
+      number: 1,
+      count: 2,
+    });
+  });
+
+  it("goes from the reveal straight to a page when the leaderboard is off", async () => {
+    const h = createHarness({ showLeaderboardAfterEach: false }, pagedQuiz({ showLeaderboardAfterEach: false }));
+    const { pin } = await setup(h);
+    await h.games.start(pin);
+    await h.games.endQuestion(pin);
+    await h.games.next(pin);
+    expect(await state(h, pin)).toBe("PAGE");
+    await h.games.next(pin);
+    expect(await state(h, pin)).toBe("QUESTION");
+  });
+
+  it("keeps the scores through a page", async () => {
+    const h = createHarness({}, pagedQuiz());
+    const { pin, players } = await setup(h);
+    await h.games.start(pin);
+    h.clock.t += 1_000;
+    expect(await h.games.submitAnswer(pin, at(players, 0).playerId, 0, { optionId: "b" }, h.clock.t)).toEqual({ ok: true });
+    await h.games.endQuestion(pin);
+    const score = (await h.games.getPlayerState(pin, at(players, 0).playerId)).score;
+    expect(score).toBeGreaterThan(0);
+    await h.games.next(pin);
+    await h.games.next(pin);
+    expect(await state(h, pin)).toBe("PAGE");
+    expect((await h.games.getPlayerState(pin, at(players, 0).playerId)).score).toBe(score);
+  });
+
+  it("accepts no answer and no end_question on a page, but host:end", async () => {
+    const h = createHarness({ showLeaderboardAfterEach: false }, pagedQuiz({ showLeaderboardAfterEach: false }));
+    const { pin, players } = await setup(h);
+    await h.games.start(pin);
+    await h.games.endQuestion(pin);
+    await h.games.next(pin);
+    expect(await state(h, pin)).toBe("PAGE");
+
+    const now = h.clock.t;
+    expect(await h.games.submitAnswer(pin, at(players, 0).playerId, 1, { optionId: "a" }, now)).toEqual({ error: "LATE" });
+    await expectCode(h.games.endQuestion(pin), "INVALID_TRANSITION");
+    await expectCode(h.games.start(pin), "INVALID_TRANSITION");
+
+    await h.games.end(pin);
+    expect(await state(h, pin)).toBe("FINISHED");
+  });
+
+  it("refuses a quiz that has pages only", async () => {
+    const h = createHarness({}, { ...sampleQuiz(), questions: [samplePage()] });
+    await expectCode(h.games.createGame(h.quiz.id), "INVALID");
+  });
+});
+
 describe("answers", () => {
   it("accepts an answer and rejects a duplicate (HSETNX)", async () => {
     const h = createHarness();
@@ -331,7 +482,8 @@ describe("answers", () => {
   });
 
   it("scores on the server with the speed bonus", async () => {
-    const h = createHarness();
+    // 1000 points: a correct answer after half of the time limit is worth 750.
+    const h = createHarness({}, withPoints(sampleQuiz(), 0, 1000));
     const { pin, players } = await setup(h);
     await h.games.start(pin);
     const t0 = h.clock.t;
@@ -339,12 +491,12 @@ describe("answers", () => {
     await h.games.submitAnswer(pin, at(players, 1).playerId, 0, { optionId: "a" }, t0 + 1_000);
     await h.settle(pin);
     const results = await h.store.getResults(pin, 0);
-    expect(results.get(at(players, 0).playerId)).toEqual({ correctness: 1, points: 0.75, answeredMs: 5_000 });
+    expect(results.get(at(players, 0).playerId)).toEqual({ correctness: 1, points: 750, answeredMs: 5_000 });
     expect(results.get(at(players, 1).playerId)).toEqual({ correctness: 0, points: 0, answeredMs: 1_000 });
 
     const resultEvents = h.notifier.of("playerResult").map((e) => playerResultEventSchema.parse(e.payload));
     expect(resultEvents).toHaveLength(2);
-    expect(resultEvents.find((r) => r.points === 0.75)?.rank).toBe(1);
+    expect(resultEvents.find((r) => r.points === 750)?.rank).toBe(1);
     // Correct answer is revealed only after the question.
     expect(resultEvents[0]?.correct).toEqual({ type: "single", correctId: "b" });
 
@@ -380,6 +532,29 @@ describe("players", () => {
     await expectCode(h.games.join(pin, "jan"), "NICK_TAKEN");
     await expectCode(h.games.join(pin, " JÁN "), "NICK_TAKEN");
     await expect(h.games.join(pin, "Jana")).resolves.toMatchObject({ playerId: expect.any(String) });
+  });
+
+  it("keeps the chosen avatar in the lobby, player state, leaderboard and ranking", async () => {
+    const h = createHarness();
+    const { pin } = await h.games.createGame(h.quiz.id);
+    const avatar = { body: 3, head: 1, glasses: 2, hat: 0, mustache: null };
+    const alice = await h.games.join(pin, "Alice", avatar);
+    const bob = await h.games.join(pin, "Bob");
+
+    expect((await h.games.attachHost(pin)).players.map((p) => p.avatar)).toEqual([avatar, DEFAULT_AVATAR]);
+    expect((await h.games.getPlayerState(pin, alice.playerId)).avatar).toEqual(avatar);
+
+    await h.games.start(pin);
+    await h.games.submitAnswer(pin, alice.playerId, 0, { optionId: "b" }, h.clock.t + 10);
+    await h.games.submitAnswer(pin, bob.playerId, 0, { optionId: "a" }, h.clock.t + 20);
+    await h.settle(pin);
+    await h.games.next(pin);
+    const leaderboard = (await h.games.attachHost(pin)).leaderboard;
+    expect(leaderboard?.top.find((e) => e.playerId === alice.playerId)?.avatar).toEqual(avatar);
+
+    await h.games.end(pin);
+    const finished = (await h.games.getPlayerState(pin, bob.playerId)).finished;
+    expect(finished?.ranking.map((r) => r.avatar)).toEqual([avatar, DEFAULT_AVATAR]);
   });
 
   it("rejects unknown PINs", async () => {
@@ -429,6 +604,49 @@ describe("players", () => {
   });
 });
 
+describe("player audio clip", () => {
+  const MUSIC_INDEX = 5;
+
+  it("gives the clip of the running music question to a player with a valid token", async () => {
+    const h = createHarness();
+    const { pin, players } = await setup(h);
+    await h.games.start(pin);
+    await goToQuestion(h, pin, MUSIC_INDEX);
+    await expect(h.games.playerClip(pin, at(players, 0).token, MUSIC_INDEX)).resolves.toEqual({
+      audioId: AUDIO_ID,
+      clip: { start: 10, duration: 20 },
+    });
+  });
+
+  it("refuses the clip before the question, for another index, after it ended and without audio", async () => {
+    const h = createHarness();
+    const { pin, players } = await setup(h);
+    const token = at(players, 0).token;
+    // Lobby: nothing is playing yet, the clip must not be fetched in advance.
+    await expectCode(h.games.playerClip(pin, token, MUSIC_INDEX), "NOT_FOUND");
+    await h.games.start(pin);
+    // A question without audio, and the music question while another one runs.
+    await expectCode(h.games.playerClip(pin, token, 0), "NOT_FOUND");
+    await expectCode(h.games.playerClip(pin, token, MUSIC_INDEX), "NOT_FOUND");
+    await goToQuestion(h, pin, MUSIC_INDEX);
+    await expectCode(h.games.playerClip(pin, token, MUSIC_INDEX - 1), "NOT_FOUND");
+    await h.games.endQuestion(pin);
+    await expectCode(h.games.playerClip(pin, token, MUSIC_INDEX), "NOT_FOUND");
+  });
+
+  it("refuses an invalid or kicked player token and an unknown PIN", async () => {
+    const h = createHarness();
+    const { pin, players } = await setup(h);
+    await h.games.start(pin);
+    await goToQuestion(h, pin, MUSIC_INDEX);
+    await expectCode(h.games.playerClip(pin, `${at(players, 0).playerId}.not-the-secret`, MUSIC_INDEX), "INVALID_TOKEN");
+    await expectCode(h.games.playerClip(pin, "garbage-token-without-id", MUSIC_INDEX), "INVALID_TOKEN");
+    await h.games.kick(pin, at(players, 1).playerId);
+    await expectCode(h.games.playerClip(pin, at(players, 1).token, MUSIC_INDEX), "INVALID_TOKEN");
+    await expectCode(h.games.playerClip("999999", at(players, 0).token, MUSIC_INDEX), "PIN_NOT_FOUND");
+  });
+});
+
 describe("leaderboard", () => {
   it("breaks ties by the sum of answeredMs of correct answers", async () => {
     const h = createHarness({ speedBonus: false });
@@ -471,6 +689,92 @@ describe("leaderboard", () => {
     await h.games.next(pin);
     const lb = leaderboardEventSchema.parse(h.notifier.last("leaderboard")?.payload);
     expect(lb.top).toHaveLength(10);
+  });
+});
+
+describe("number questions", () => {
+  /** Plays one `number` question with the given guesses (all at the same time, so the speed bonus is equal) and returns the points per player. */
+  async function play(data: Parameters<typeof numberQuestion>[0], guesses: unknown[]) {
+    const quiz: Quiz = { ...sampleQuiz({ speedBonus: false }), questions: [numberQuestion(data)] };
+    const h = createHarness({ speedBonus: false }, quiz);
+    const { pin, players } = await setup(
+      h,
+      guesses.map((_, i) => `P${i}`),
+    );
+    await h.games.start(pin);
+    const t0 = h.clock.t;
+    for (const [i, value] of guesses.entries()) {
+      await h.games.submitAnswer(pin, at(players, i).playerId, 0, { value }, t0 + 1_000);
+    }
+    await h.settle(pin);
+    const results = await h.store.getResults(pin, 0);
+    return { h, pin, points: players.map((p) => results.get(p.playerId)?.points ?? 0) };
+  }
+
+  it("closest: the nearest guess scores, the rest do not", async () => {
+    const { points } = await play({ mode: "closest" }, [2020, 2025, 2031]);
+    expect(points).toEqual([0, 1000, 0]);
+  });
+
+  it("closest: guesses tied for the nearest distance all score", async () => {
+    const { points } = await play({ mode: "closest" }, [2025, 2027, 2030]);
+    expect(points).toEqual([1000, 1000, 0]);
+  });
+
+  it("closest: an exact hit scores together with other exact hits only", async () => {
+    const { points } = await play({ mode: "closest" }, [2026, 2025, 2026]);
+    expect(points).toEqual([1000, 0, 1000]);
+  });
+
+  it("closest: a player who did not answer does not influence the others", async () => {
+    const { points } = await play({ mode: "closest" }, [1900]);
+    expect(points).toEqual([1000]);
+  });
+
+  it("tolerance: every guess within the tolerance scores, regardless of the others", async () => {
+    const { points } = await play({ mode: "tolerance", tolerance: 1 }, [2025, 2026, 2027, 2028, 2000]);
+    expect(points).toEqual([1000, 1000, 1000, 0, 0]);
+  });
+
+  it("tolerance: nobody scores when nobody is close enough", async () => {
+    const { points } = await play({ mode: "tolerance", tolerance: 1 }, [2030, 2010]);
+    expect(points).toEqual([0, 0]);
+  });
+
+  it("rejects an answer that is not a number within limits", async () => {
+    const quiz: Quiz = { ...sampleQuiz(), questions: [numberQuestion()] };
+    const h = createHarness({}, quiz);
+    const { pin, players } = await setup(h);
+    await h.games.start(pin);
+    const p = at(players, 0).playerId;
+    const t = h.clock.t;
+    expect(await h.games.submitAnswer(pin, p, 0, { value: "2026" }, t)).toEqual({ error: "INVALID" });
+    expect(await h.games.submitAnswer(pin, p, 0, { value: 1e13 }, t)).toEqual({ error: "INVALID" });
+    expect(await h.games.submitAnswer(pin, p, 0, { value: 1.2345 }, t)).toEqual({ error: "INVALID" });
+    expect(await h.games.submitAnswer(pin, p, 0, { value: 2025 }, t)).toEqual({ ok: true });
+    expect(await h.games.submitAnswer(pin, p, 0, { value: 2026 }, t)).toEqual({ error: "ALREADY_ANSWERED" });
+  });
+
+  it("does not leak the correct number before reveal, and reveals it with the guesses sorted by distance", async () => {
+    const { h } = await play({ mode: "tolerance", tolerance: 1 }, [2030, 2027, 2027, 2026]);
+    const start = questionStartEventSchema.parse(h.notifier.last("questionStart")?.payload);
+    expect(start).toMatchObject({ type: "number", mode: "tolerance", tolerance: 1 });
+    expect(JSON.stringify(h.notifier.of("questionStart"))).not.toContain("2026");
+    expect(JSON.stringify(h.notifier.of("questionStartPlayers"))).not.toContain("2026");
+
+    // Everybody answered, so the question has ended on its own.
+    const reveal = questionRevealEventSchema.parse(h.notifier.last("questionReveal")?.payload);
+    expect(reveal.correct).toEqual({ type: "number", answer: 2026, mode: "tolerance", tolerance: 1 });
+    expect(reveal.stats).toEqual({
+      type: "number",
+      guesses: [
+        { value: 2026, count: 1, hit: true },
+        { value: 2027, count: 2, hit: true },
+        { value: 2030, count: 1, hit: false },
+      ],
+    });
+    const result = playerResultEventSchema.parse(h.notifier.of("playerResult")[0]?.payload);
+    expect(result.correct).toMatchObject({ type: "number", answer: 2026 });
   });
 });
 
@@ -536,7 +840,7 @@ describe("host override", () => {
   });
 
   it("overrides one field of a music question", async () => {
-    const h = createHarness({ speedBonus: false });
+    const h = createHarness({ speedBonus: false }, withPoints(sampleQuiz({ speedBonus: false }), 5, 1000));
     const { pin, players } = await setup(h, ["Alice"]);
     const alice = at(players, 0);
     await h.games.start(pin);
@@ -545,14 +849,14 @@ describe("host override", () => {
     await h.settle(pin);
     expect((await h.store.getResults(pin, 5)).get(alice.playerId)).toMatchObject({
       correctness: 0.5,
-      points: 0.5,
+      points: 500,
       perField: { artist: true, title: false },
     });
     await h.games.override(pin, { questionIndex: 5, fieldKey: "title", normalized: "two", accept: true });
-    expect((await h.store.getResults(pin, 5)).get(alice.playerId)).toMatchObject({ correctness: 1, points: 1 });
+    expect((await h.store.getResults(pin, 5)).get(alice.playerId)).toMatchObject({ correctness: 1, points: 1000 });
     // Manual reject wins over an automatic match.
     await h.games.override(pin, { questionIndex: 5, fieldKey: "artist", normalized: "metalica", accept: false });
-    expect((await h.store.getResults(pin, 5)).get(alice.playerId)).toMatchObject({ correctness: 0.5, points: 0.5 });
+    expect((await h.store.getResults(pin, 5)).get(alice.playerId)).toMatchObject({ correctness: 0.5, points: 500 });
   });
 
   it("rejects overrides that do not fit the game", async () => {

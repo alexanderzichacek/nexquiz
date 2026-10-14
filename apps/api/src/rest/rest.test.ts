@@ -1,9 +1,9 @@
-import type { GameResultsResponse, QuizDto } from "@nexquiz/shared";
+import type { Clip, GameResultsResponse, QuizDto } from "@nexquiz/shared";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp, type AppDeps, type AppServices } from "../app.js";
 import { loadConfig } from "../config.js";
-import { createHarness, QUIZ_ID, type Harness } from "../test/helpers.js";
+import { AUDIO_ID, createHarness, QUIZ_ID, type Harness } from "../test/helpers.js";
 import { csvCell, resultsToCsv } from "./csv.js";
 import { SESSION_COOKIE } from "./session.js";
 
@@ -30,9 +30,9 @@ const results: GameResultsResponse = {
     playerCount: 1,
     winner: "=Ján, \"the\" best",
   },
-  questions: [{ index: 0, type: "single", prompt: "2 + 2?", points: 1 }],
-  players: [{ id: PLAYER_ID, nickname: "=Ján, \"the\" best", score: 0.75, finalRank: 1 }],
-  answers: [{ questionIndex: 0, playerId: PLAYER_ID, correctness: 1, points: 0.75, answeredMs: 5000 }],
+  questions: [{ index: 0, type: "single", prompt: "2 + 2?", points: 1000 }],
+  players: [{ id: PLAYER_ID, nickname: "=Ján, \"the\" best", score: 750, finalRank: 1 }],
+  answers: [{ questionIndex: 0, playerId: PLAYER_ID, correctness: 1, points: 750, answeredMs: 5000 }],
 };
 
 function quizDto(title: string): QuizDto {
@@ -46,6 +46,9 @@ function quizDto(title: string): QuizDto {
     updatedAt: "2026-10-01T10:00:00.000Z",
   };
 }
+
+/** Clips "cut" by the fake clip service (the real cut is covered in `media/clips.test.ts`). */
+const cutClips: { audioId: string; clip: Clip }[] = [];
 
 function fakeServices(h: Harness): AppServices {
   return {
@@ -72,6 +75,12 @@ function fakeServices(h: Harness): AppServices {
         remove: async () => undefined,
       },
     },
+    clips: {
+      clip: async (audioId, clip) => {
+        cutClips.push({ audioId, clip });
+        return Buffer.from("fake mp3");
+      },
+    },
     history: {
       history: async () => [results.game],
       results: async (id) => (id === GAME_ID ? results : null),
@@ -79,9 +88,9 @@ function fakeServices(h: Harness): AppServices {
   };
 }
 
-async function makeApp(h: Harness): Promise<FastifyInstance> {
+async function makeApp(h: Harness, overrides: Partial<AppDeps["config"]> = {}): Promise<FastifyInstance> {
   const deps: AppDeps = {
-    config,
+    config: { ...config, ...overrides },
     publicDir: "/nonexistent",
     logLevel: "silent",
     db: { db: {} as AppDeps["db"]["db"], ping: async () => true, close: async () => undefined },
@@ -264,6 +273,53 @@ describe("REST", () => {
       expect(qr.rawPayload.subarray(1, 4).toString()).toBe("PNG");
     });
 
+    it("rate limits the exists check per IP with EXISTS_RATE_LIMIT_PER_MIN", async () => {
+      const limited = await makeApp(createHarness(), { EXISTS_RATE_LIMIT_PER_MIN: 3 });
+      const exists = (ip: string) =>
+        limited.inject({ method: "GET", url: "/api/games/123456/exists", headers: { "cf-connecting-ip": ip } });
+      const codes: number[] = [];
+      for (let i = 0; i < 4; i++) codes.push((await exists("203.0.113.50")).statusCode);
+      expect(codes).toEqual([200, 200, 200, 429]);
+      expect((await exists("203.0.113.50")).json()).toEqual({ error: "RATE_LIMITED" });
+      expect((await exists("203.0.113.51")).statusCode).toBe(200);
+      await limited.close();
+    });
+
+    it("serves the audio clip of the running question only to a player with a valid token", async () => {
+      const res = await app.inject({ method: "POST", url: "/api/games", headers: { cookie }, payload: { quizId: QUIZ_ID } });
+      const { pin } = res.json<{ pin: string }>();
+      const { token } = await h.games.join(pin, "Alice");
+      const musicIndex = h.quiz.questions.findIndex((q) => q.type === "music");
+      const url = `/api/games/${pin}/questions/${musicIndex}/clip`;
+      const clip = (authorization?: string) =>
+        app.inject({ method: "GET", url, headers: authorization === undefined ? {} : { authorization } });
+
+      // Not before the question runs.
+      expect((await clip(`Bearer ${token}`)).statusCode).toBe(404);
+      await h.games.start(pin);
+      for (let i = 0; i < musicIndex; i++) {
+        await h.games.endQuestion(pin);
+        await h.games.next(pin);
+        await h.games.next(pin);
+      }
+      cutClips.length = 0;
+
+      const ok = await clip(`Bearer ${token}`);
+      expect(ok.statusCode).toBe(200);
+      expect(ok.headers["content-type"]).toBe("audio/mpeg");
+      expect(ok.headers["cache-control"]).toBe("private, no-store");
+      expect(ok.body).toBe("fake mp3");
+      expect(cutClips).toEqual([{ audioId: AUDIO_ID, clip: { start: 10, duration: 20 } }]);
+
+      for (const authorization of [undefined, "Bearer", token, `Bearer ${token.slice(0, -2)}xx`]) {
+        const denied = await clip(authorization);
+        expect(denied.statusCode).toBe(401);
+        expect(denied.json()).toEqual({ error: "INVALID_TOKEN" });
+      }
+      expect((await app.inject({ method: "GET", url: `/api/games/${pin}/questions/x/clip` })).statusCode).toBe(400);
+      expect(cutClips).toHaveLength(1);
+    });
+
     it("rejects an unknown quiz", async () => {
       const res = await app.inject({
         method: "POST",
@@ -318,6 +374,6 @@ describe("CSV export", () => {
   it("has a BOM, a header and one row per player", () => {
     const csv = resultsToCsv(results);
     expect(csv.startsWith("﻿")).toBe(true);
-    expect(csv.slice(1).split("\r\n")).toEqual(["rank,nickname,score,Q1", `1,"'=Ján, ""the"" best",0.75,0.75`, ""]);
+    expect(csv.slice(1).split("\r\n")).toEqual(["rank,nickname,score,Q1", `1,"'=Ján, ""the"" best",750,750`, ""]);
   });
 });

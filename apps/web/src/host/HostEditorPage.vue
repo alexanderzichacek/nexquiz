@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { createGameResponseSchema, LIMITS } from "@nexquiz/shared";
+import { createGameResponseSchema, isPage, LIMITS } from "@nexquiz/shared";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { onBeforeRouteLeave, RouterLink, useRoute, useRouter } from "vue-router";
 import { sk } from "@/i18n/sk";
@@ -10,6 +10,7 @@ import { useConfirmStore } from "@/stores/confirm";
 import { useToastStore } from "@/stores/toast";
 import "./editor/editor.css";
 import FieldError from "./editor/FieldError.vue";
+import PageEditor from "./editor/PageEditor.vue";
 import QuestionEditor from "./editor/QuestionEditor.vue";
 import QuestionList from "./editor/QuestionList.vue";
 import SettingsPanel from "./editor/SettingsPanel.vue";
@@ -105,17 +106,24 @@ onBeforeUnmount(() => {
           <QuestionList />
         </div>
         <div class="panel panel--main">
-          <QuestionEditor
-            v-if="editor.selected"
+          <PageEditor
+            v-if="editor.selected && isPage(editor.selected)"
             :key="editor.selected.id"
             :model-value="editor.selected"
             :index="editor.selectedIndex"
             :total="editor.questions.length"
           />
+          <QuestionEditor
+            v-else-if="editor.selectedQuestion"
+            :key="editor.selectedQuestion.id"
+            :model-value="editor.selectedQuestion"
+            :index="editor.selectedNumber - 1"
+            :total="editor.totalQuestions"
+          />
           <p v-else class="hint">{{ sk.editor.noQuestions }}</p>
         </div>
         <div class="panel panel--settings">
-          <SettingsPanel v-model:quiz="editor.draft" :question="editor.selected" :starting="starting" @start="startGame" />
+          <SettingsPanel v-model:quiz="editor.draft" :question="editor.selectedQuestion" :starting="starting" @start="startGame" />
         </div>
       </div>
     </div>

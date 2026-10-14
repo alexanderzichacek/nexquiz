@@ -6,6 +6,7 @@ import {
   onFinished,
   onLeaderboard,
   onLobbyPlayers,
+  onPageShow,
   onProgress,
   onQuestionEnd,
   onQuestionStart,
@@ -86,6 +87,7 @@ export function useHostGame(pin: string) {
     const localNow = Date.now();
     apply((v) => onQuestionStart(v, e, localNow));
   });
+  socket.on("page:show", (e) => apply((v) => onPageShow(v, e)));
   socket.on("question:progress", (e) => apply((v) => onProgress(v, e)));
   socket.on("question:end", (e) => apply((v) => onQuestionEnd(v, e)));
   socket.on("question:reveal", (e) => apply((v) => onReveal(v, e)));

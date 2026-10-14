@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import type { LeaderboardEntry } from "@nexquiz/shared";
 import { computed, toRef } from "vue";
+import PlayerAvatar from "@/components/PlayerAvatar.vue";
 import { format, sk } from "@/i18n/sk";
 import { formatDelta, formatScore } from "@/lib/format";
 import { useCountUp } from "@/lib/useCountUp";
 
-/** Rank, nickname, score (count-up), delta of the last question and the rank change ▲ / ▼. */
+/** Rank, avatar + nickname, score (count-up), delta of the last question and the rank change ▲ / ▼. */
 const props = defineProps<{ entry: LeaderboardEntry }>();
 
 const score = useCountUp(toRef(() => props.entry.score), props.entry.score - props.entry.delta);
@@ -24,7 +25,10 @@ const change = computed(() => {
 <template>
   <div class="row">
     <span class="row__rank tabular">{{ entry.rank }}</span>
-    <span class="row__name">{{ entry.nickname }}</span>
+    <span class="row__player">
+      <PlayerAvatar :avatar="entry.avatar" class="row__avatar" />
+      <span class="row__name">{{ entry.nickname }}</span>
+    </span>
     <span class="row__score tabular">{{ formatScore(score) }}</span>
     <span class="row__delta tabular">
       {{ formatDelta(entry.delta) }}
@@ -52,6 +56,17 @@ const change = computed(() => {
 .row__rank {
   font-weight: var(--fw-black);
   color: var(--text-muted);
+}
+
+.row__player {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-width: 0;
+}
+
+.row__avatar {
+  --avatar-size: var(--avatar-row);
 }
 
 .row__name {

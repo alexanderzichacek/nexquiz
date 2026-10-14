@@ -5,7 +5,7 @@ import {
   type Question,
 } from "@nexquiz/shared";
 import { describe, expect, it } from "vitest";
-import { createHarness, sampleQuiz } from "../test/helpers.js";
+import { createHarness, numberQuestion, sampleQuiz } from "../test/helpers.js";
 import { buildQuestionStart, forPlayers } from "./sanitize.js";
 import { presentationOrder, shuffleNotIdentity } from "./shuffle.js";
 
@@ -33,7 +33,7 @@ const questions = sampleQuiz().questions;
 describe("buildQuestionStart (sanitizer)", () => {
   it.each(questions.map((q) => [q.type, q] as const))("never leaks secrets for %s", (_type, question) => {
     const order = presentationOrder(question, true, (n) => Math.floor(Math.random() * n));
-    const event = buildQuestionStart({ question, index: 0, total: 6, order, deadline: 2, serverNow: 1 });
+    const event = buildQuestionStart({ question, index: 0, total: 6, number: 1, count: 6, order, deadline: 2, serverNow: 1 });
     expect(secretsIn(event)).toEqual([]);
     expect(questionStartEventSchema.parse(event)).toEqual(event);
     // No alias text either.
@@ -54,18 +54,27 @@ describe("buildQuestionStart (sanitizer)", () => {
       data: { ...base.data, correctIds: ["b"], extra: 1 },
       media: { imageId: "11111111-1111-4111-8111-111111111111", leak: true },
     } as Question;
-    const event = buildQuestionStart({ question: polluted, index: 0, total: 1, order: null, deadline: 2, serverNow: 1 });
+    const event = buildQuestionStart({ question: polluted, index: 0, total: 1, number: 1, count: 6, order: null, deadline: 2, serverNow: 1 });
     expect(secretsIn(event)).toEqual([]);
     expect(Object.keys(event).sort()).toEqual(
-      ["deadline", "index", "media", "options", "prompt", "serverNow", "timeLimit", "total", "type"].sort(),
+      ["count", "deadline", "index", "media", "number", "options", "prompt", "serverNow", "timeLimit", "total", "type"].sort(),
     );
     expect(event.media).toEqual({ imageId: "11111111-1111-4111-8111-111111111111" });
+  });
+
+  it("sends the mode and tolerance of a number question as a hint, never its correct number", () => {
+    const question = numberQuestion({ answer: 31_337, mode: "tolerance", tolerance: 5 });
+    const event = buildQuestionStart({ question, index: 0, total: 1, number: 1, count: 1, order: null, deadline: 2, serverNow: 1 });
+    expect(event).toMatchObject({ type: "number", mode: "tolerance", tolerance: 5 });
+    expect(Object.keys(event)).not.toContain("answer");
+    expect(JSON.stringify(event)).not.toContain("31337");
+    expect(JSON.stringify(forPlayers(event))).not.toContain("31337");
   });
 
   it("never sends the audio id of a music question to players", () => {
     const music = questions[5];
     if (music?.type !== "music" || music.media?.audioId === undefined) throw new Error("fixture");
-    const host = buildQuestionStart({ question: music, index: 5, total: 6, order: null, deadline: 2, serverNow: 1 });
+    const host = buildQuestionStart({ question: music, index: 5, total: 6, number: 1, count: 6, order: null, deadline: 2, serverNow: 1 });
     expect(host.media.audioId).toBe(music.media.audioId);
     const player = forPlayers(host);
     expect(player.media).toEqual({});
@@ -76,10 +85,49 @@ describe("buildQuestionStart (sanitizer)", () => {
     expect(forPlayers(null)).toBeNull();
   });
 
+  it("sends the clip of a text question with audio, and the audio id to the host only", () => {
+    const text = questions[4];
+    if (text?.type !== "text") throw new Error("fixture");
+    const audioId = "33333333-3333-4333-8333-333333333333";
+    const lyrics: Question = { ...text, media: { audioId }, data: { ...text.data, clip: { start: 40, duration: 12 } } };
+    const host = buildQuestionStart({ question: lyrics, index: 4, total: 6, number: 1, count: 6, order: null, deadline: 2, serverNow: 1 });
+    expect(host.media.audioId).toBe(audioId);
+    expect(host).toMatchObject({ type: "text", clip: { start: 40, duration: 12 } });
+    expect(secretsIn(host)).toEqual([]);
+    expect(JSON.stringify(host)).not.toContain("Bratislava");
+    const player = forPlayers(host);
+    expect(player.media).toEqual({});
+    expect(JSON.stringify(player)).not.toContain(audioId);
+    // The clip tells the phone there is something to listen to.
+    expect(player).toMatchObject({ clip: { start: 40, duration: 12 } });
+    // A text question without audio carries no clip.
+    const plain = buildQuestionStart({ question: text, index: 4, total: 6, number: 1, count: 6, order: null, deadline: 2, serverNow: 1 });
+    expect("clip" in plain).toBe(false);
+  });
+
+  it("sends the video id to the host and the players", () => {
+    const single = questions[0];
+    if (!single) throw new Error("fixture");
+    const videoId = "22222222-2222-4222-8222-222222222222";
+    const host = buildQuestionStart({
+      question: { ...single, media: { videoId } },
+      index: 0,
+      total: 6,
+      number: 1,
+      count: 6,
+      order: null,
+      deadline: 2,
+      serverNow: 1,
+    });
+    expect(host.media).toEqual({ videoId });
+    // Played on the phone only when the player turned sound and video on.
+    expect(forPlayers(host).media).toEqual({ videoId });
+  });
+
   it("only exposes key, label and weight of text fields", () => {
     const music = questions[5];
     if (music?.type !== "music") throw new Error("fixture");
-    const event = buildQuestionStart({ question: music, index: 5, total: 6, order: null, deadline: 2, serverNow: 1 });
+    const event = buildQuestionStart({ question: music, index: 5, total: 6, number: 1, count: 6, order: null, deadline: 2, serverNow: 1 });
     expect(event.type === "music" && event.fields).toEqual([
       { key: "artist", label: "Interpret", weight: 0.5 },
       { key: "title", label: "Názov skladby", weight: 0.5 },
@@ -92,11 +140,11 @@ describe("buildQuestionStart (sanitizer)", () => {
     const correct = order.data.items.map((i) => i.id);
     for (let run = 0; run < 200; run++) {
       const ids = presentationOrder(order, false, (n) => Math.floor(Math.random() * n));
-      const event = buildQuestionStart({ question: order, index: 2, total: 6, order: ids, deadline: 2, serverNow: 1 });
+      const event = buildQuestionStart({ question: order, index: 2, total: 6, number: 1, count: 6, order: ids, deadline: 2, serverNow: 1 });
       expect(event.type === "order" && event.items.map((i) => i.id)).not.toEqual(correct);
     }
     // Even without a stored shuffle.
-    const fallback = buildQuestionStart({ question: order, index: 2, total: 6, order: null, deadline: 2, serverNow: 1 });
+    const fallback = buildQuestionStart({ question: order, index: 2, total: 6, number: 1, count: 6, order: null, deadline: 2, serverNow: 1 });
     expect(fallback.type === "order" && fallback.items.map((i) => i.id)).not.toEqual(correct);
   });
 

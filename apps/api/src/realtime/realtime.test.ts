@@ -50,8 +50,23 @@ function hostClient(withCookie = true): HostClient {
   );
 }
 
-function playClient(auth: object): PlayClient {
-  return track(connect(`${baseUrl}/play`, { transports: ["websocket"], forceNew: true, auth: { ...auth } }));
+/** `ip` is sent as `CF-Connecting-IP` (the rate-limit key); default = the socket address. */
+function playClient(auth: object, ip?: string): PlayClient {
+  return track(
+    connect(`${baseUrl}/play`, {
+      transports: ["websocket"],
+      forceNew: true,
+      auth: { ...auth },
+      extraHeaders: ip ? { "cf-connecting-ip": ip } : {},
+    }),
+  );
+}
+
+/** One `player:join` from a fresh socket (one socket = one player). */
+async function joinFrom(ip: string, pin: string, nickname: string): Promise<unknown> {
+  const player = playClient({ pin }, ip);
+  await connected(player);
+  return player.timeout(2000).emitWithAck("player:join", { pin, nickname });
 }
 
 function connectError(socket: Socket): Promise<string> {
@@ -100,6 +115,7 @@ beforeAll(async () => {
     verifyHost: hostCookieVerifier(app),
     log: silentLog,
     joinLimiter: new FixedWindowLimiter(10, 60_000),
+    joinMissLimiter: new FixedWindowLimiter(3, 60_000),
   });
   await app.listen({ port: 0, host: "127.0.0.1" });
   baseUrl = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
@@ -200,12 +216,31 @@ describe("realtime game flow", () => {
     expect(await host.timeout(2000).emitWithAck("host:attach", { pin: "999999" })).toEqual({ error: "PIN_NOT_FOUND" });
   });
 
-  it("rate limits player:join per IP", async () => {
+  it("rate limits player:join per IP + PIN", async () => {
     const pin = await createGame();
-    const player = playClient({ pin });
+    const ip = "198.51.100.10";
+    const player = playClient({ pin }, ip);
     await connected(player);
     const acks: unknown[] = [];
-    for (let i = 0; i < 12; i++) acks.push(await player.timeout(2000).emitWithAck("player:join", { pin, nickname: "" }));
+    for (let i = 0; i < 11; i++) acks.push(await player.timeout(2000).emitWithAck("player:join", { pin, nickname: "" }));
+    expect(acks.slice(0, 10)).toEqual(Array.from({ length: 10 }, () => ({ error: "INVALID" })));
     expect(acks.at(-1)).toEqual({ error: "RATE_LIMITED" });
+
+    // Another game from the same network has its own budget, another network in the same game too.
+    const otherPin = await createGame();
+    expect(await joinFrom(ip, otherPin, "Carol")).toHaveProperty("token");
+    expect(await joinFrom("198.51.100.11", pin, "Dave")).toHaveProperty("token");
+    expect(await joinFrom(ip, pin, "Erin")).toEqual({ error: "RATE_LIMITED" });
+  });
+
+  it("blocks an IP after too many joins for unknown PINs", async () => {
+    const ip = "198.51.100.20";
+    const pin = await createGame();
+    const unknown = pin === "999999" ? "999998" : "999999";
+    for (let i = 0; i < 3; i++) expect(await joinFrom(ip, unknown, "Mallory")).toEqual({ error: "PIN_NOT_FOUND" });
+    expect(await joinFrom(ip, unknown, "Mallory")).toEqual({ error: "RATE_LIMITED" });
+    // Probing other PINs or joining an existing game from that IP is blocked too, other IPs are not.
+    expect(await joinFrom(ip, pin, "Mallory")).toEqual({ error: "RATE_LIMITED" });
+    expect(await joinFrom("198.51.100.21", pin, "Frank")).toHaveProperty("token");
   });
 });

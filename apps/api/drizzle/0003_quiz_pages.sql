@@ -1,0 +1,2 @@
+ALTER TABLE "questions" DROP CONSTRAINT "questions_type_check";--> statement-breakpoint
+ALTER TABLE "questions" ADD CONSTRAINT "questions_type_check" CHECK ("questions"."type" in ('single','multi','order','hotspot','text','music','page'));

@@ -66,12 +66,21 @@
   --fs-small: 13px;
 
   /* font sizes – host screen (projector) */
-  --fs-host-question: clamp(28px, 3.6vw, 64px);
-  --fs-host-option: clamp(20px, 2.2vw, 40px);
-  --fs-host-pin: clamp(64px, 9vw, 160px);
-  --fs-host-timer: clamp(32px, 4vw, 72px);
-  --fs-host-body: clamp(18px, 1.6vw, 28px);
-  --fs-host-label: clamp(14px, 1.2vw, 20px);
+  /* width AND height aware (min(vw, vh)), so a short window or 16:10 never overflows */
+  --fs-host-question: clamp(24px, min(3.6vw, 6.4vh), 64px);
+  --fs-host-option: clamp(18px, min(2.2vw, 3.9vh), 40px);
+  --fs-host-pin: clamp(48px, min(9vw, 16vh), 160px);
+  --fs-host-timer: clamp(28px, min(4vw, 7.1vh), 72px);
+  --fs-host-body: clamp(16px, min(1.6vw, 2.85vh), 28px);
+  --fs-host-label: clamp(13px, min(1.2vw, 2.1vh), 20px);
+  --fs-host-row: clamp(14px, min(2.2vw, 3.1vh), 40px); /* leaderboard rows (10 must fit) */
+
+  /* text fit steps for long texts (choiceLayout.ts, classes .fit-m / .fit-s / .fit-xs) */
+  --fit-m: 0.84;
+  --fit-s: 0.7;
+  --fit-xs: 0.58;
+  --fs-player-min: 12px; /* smallest scaled text on the phone */
+  --fs-player-prompt-min: 14px;
 
   /* font sizes – editor */
   --fs-editor-question: 18px;
@@ -82,6 +91,8 @@
   /* landing */
   --fs-pin-input: 28px;
   --fs-wordmark: 24px;
+  --fs-logo: 40px;
+  --logo-mark: 56px;
   --fs-claim: 20px;
 
   /* weights */
@@ -128,13 +139,15 @@
   --marker: 28px; /* hotspot tap marker */
   --marker-border: #ffffff;
   --heat-dot: 10px; /* hotspot reveal dots */
-  --timer-ring: clamp(72px, 8vw, 140px);
+  --timer-ring: clamp(56px, min(8vw, 11vh), 140px);
   --timer-stroke: 8px;
   --timer-bar-h: 6px;
   --progress-h: 6px;
-  --bar-chart-h: 38vh; /* reveal bar chart height */
   --podium-h: 32vh; /* height of the 1st place column */
   --stage-pad: clamp(16px, 2.5vw, 48px);
+  --stage-pad-y: clamp(12px, 2.5vh, 40px); /* vertical stage padding (height is the scarce dimension) */
+  --stage-gap: clamp(8px, 1.8vh, 24px); /* gap between the rows of a stage screen */
+  --stage-tile-pad: clamp(8px, 1.6vh, 16px); /* vertical padding of host tiles and rows */
   --stage-max: 1600px;
   --eq-bar: clamp(6px, 0.8vw, 14px);
   --hand-icon: 1em;
@@ -150,21 +163,48 @@
   --audio-w: 560px;
   --audio-btn: clamp(72px, 7vw, 128px);
   --eq-h: clamp(48px, 8vh, 120px);
-  --stage-image-h: 34vh; /* question image on the host screen */
-  --stage-hotspot-h: 58vh; /* hotspot image / heatmap on the host screen */
+  --stage-media-min: 14vh; /* question image / video keeps at least this next to the tiles */
+  --stage-tiles-max: 58vh; /* host choice tiles without media don't grow taller */
   --stage-list-w: 960px; /* order lists on the host screen */
   --stage-board-w: 1100px; /* leaderboard / ranking width */
-  --stage-ranking-h: 30vh; /* scrollable full ranking under the podium */
+  --ranking-col-min: 14em; /* min. column width of the host end-screen ranking (2 columns when it fits) */
+  --player-ranking-h: 40dvh; /* scrollable ranking under the podium on the player's end screen */
   --bar-col-max: 280px; /* reveal bar chart column */
   --toggle-min: 7em; /* ✓ / ✗ toggle in TextAnswerGroups */
   --lb-columns: 2.5em 1fr 5em 5em 3.5em; /* rank · nickname · score · delta · ▲▼ */
   --rank-col: 2.5em;
   --podium-col-max: 14em;
   --podium-h-player: 22vh;
-  --h-player-image: 30vh;
+  --h-player-image: 30dvh; /* question image (shrinks when the answers need the room) */
+  --h-player-tile: 56px; /* min. height of a player choice row (list) */
+  --h-player-grid-tile: clamp(72px, 14dvh, 112px); /* height of a short-option grid tile */
+  --fs-player-grid-option: 24px; /* centered text of a short-option grid tile */
+  --h-player-card-max: 760px; /* player card height on a large screen during the game */
   --h-player-card: 420px; /* player card min. height on ≥ 600 px */
   --result-icon: 64px;
   --seconds-w: 3.5ch;
+
+  /* player avatar (PlayerAvatar) – shirts use --opt-n */
+  --avatar-bg: var(--surface-2);
+  --avatar-ink: #15161c; /* eyes, mouth, glasses, top hat */
+  --avatar-light: #ffffff; /* collar, stripes */
+  --avatar-skin-1: #f9d7b9;
+  --avatar-skin-2: #eebb8e;
+  --avatar-skin-3: #d19a6a;
+  --avatar-skin-4: #a8724a;
+  --avatar-skin-5: #6e4a2f;
+  --avatar-hair-1: #6b3f1d; /* brown */
+  --avatar-hair-2: #1f1a17; /* black */
+  --avatar-hair-3: #e2b84f; /* blond */
+  --avatar-hair-4: #b5482a; /* red */
+  --avatar-sm: 32px; /* default */
+  --avatar-chip: 36px; /* lobby PlayerChip */
+  --avatar-row: 1.6em; /* leaderboard / ranking rows */
+  --avatar-podium: clamp(48px, 6vw, 112px);
+  --avatar-podium-player: 48px;
+  --avatar-waiting: 96px; /* player waiting screen */
+  --avatar-preview: 112px; /* nickname step preview */
+  --avatar-pick: 44px; /* variant buttons in the picker */
 
   /* motion multiplier: 1 = full motion, 0 = reduced (fade only) */
   --motion: 1;

@@ -1,10 +1,11 @@
-import type { PlayerGameState, PlayerResultEvent, QuestionStartEvent } from "@nexquiz/shared";
+import { DEFAULT_AVATAR, type PlayerGameState, type PlayerResultEvent, type QuestionStartEvent } from "@nexquiz/shared";
 import { describe, expect, it } from "vitest";
 import {
   finalPlacement,
   fromPlayerState,
   onFinished,
   onLeaderboard,
+  onPageShow,
   onPlayerResult,
   onQuestionEnd,
   onQuestionStart,
@@ -20,11 +21,13 @@ function state(): PlayerGameState {
     pin: "123456",
     playerId: ME,
     nickname: "Jano",
+    avatar: DEFAULT_AVATAR,
     state: "LOBBY",
     currentIndex: -1,
     total: 3,
     serverNow: 5_000,
     question: null,
+    page: null,
     leaderboard: null,
     finished: null,
     score: 0,
@@ -38,6 +41,8 @@ const q0: QuestionStartEvent = {
   type: "text",
   index: 0,
   total: 3,
+  number: 1,
+  count: 3,
   prompt: "Najvyšší štít Tatier?",
   media: {},
   fields: [{ key: "answer", weight: 1 }],
@@ -99,19 +104,29 @@ describe("playState", () => {
     expect(v.rank).toBe(1);
   });
 
+  it("shows a page and clears the previous result and answer state", () => {
+    let v = onQuestionStart(fromPlayerState(state()), q0);
+    v = onPlayerResult(v, result(0, 1, 1, 1));
+    v = onPageShow(v, { index: 1, title: "Šport", description: "", media: {} });
+    expect(v).toMatchObject({ state: "PAGE", currentIndex: 1, question: null, result: null, hasAnswered: false, score: 1 });
+    expect(v.page?.title).toBe("Šport");
+    expect(onQuestionStart(v, { ...q0, index: 2 }).page).toBeNull();
+  });
+
   it("takes score and rank from the leaderboard and the final ranking", () => {
     let v = fromPlayerState(state());
     v = onLeaderboard(v, {
       index: 0,
-      top: [{ playerId: ME, nickname: "Jano", score: 2.5, delta: 1, rank: 2, rankChange: 1 }],
+      number: 1,
+      top: [{ playerId: ME, nickname: "Jano", avatar: DEFAULT_AVATAR, score: 2.5, delta: 1, rank: 2, rankChange: 1 }],
     });
     expect(v.state).toBe("LEADERBOARD");
     expect(v.rank).toBe(2);
     v = onFinished(v, {
       podium: [],
       ranking: [
-        { playerId: OTHER, nickname: "Zuzka", score: 3, rank: 1 },
-        { playerId: ME, nickname: "Jano", score: 2.5, rank: 2 },
+        { playerId: OTHER, nickname: "Zuzka", avatar: DEFAULT_AVATAR, score: 3, rank: 1 },
+        { playerId: ME, nickname: "Jano", avatar: DEFAULT_AVATAR, score: 2.5, rank: 2 },
       ],
     });
     expect(finalPlacement(v)).toEqual({ rank: 2, total: 2 });

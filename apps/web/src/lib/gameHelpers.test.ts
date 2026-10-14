@@ -4,7 +4,7 @@ import { nicknameColor, optionColor, optionLetter } from "@/components/options";
 import { optionIndexForKey } from "./answerKeys";
 import { formatDelta, formatPercent, formatScore, resultKind } from "./format";
 import { containRect, fromUnitPoint, toClampedUnitPoint, toUnitPoint } from "./imageFit";
-import { byPreviousRank, byRank, podiumOrder, previousRank } from "./leaderboard";
+import { byPreviousRank, byRank, podiumOrder, previousRank, rankingRest } from "./leaderboard";
 import { activeMilestone, clockOffset, remainingMs, remainingSeconds } from "./serverClock";
 import { easeOut } from "./useCountUp";
 
@@ -74,13 +74,35 @@ describe("leaderboard helpers", () => {
     expect(podiumOrder([{ rank: 1 }, { rank: 2 }]).map((e) => e.rank)).toEqual([2, 1]);
     expect(podiumOrder([{ rank: 1 }]).map((e) => e.rank)).toEqual([1]);
   });
+
+  it("splits the final ranking into the podium and the rest", () => {
+    const ranking = [
+      { playerId: "p1", rank: 1 },
+      { playerId: "p2", rank: 2 },
+      { playerId: "p3", rank: 3 },
+      { playerId: "p4", rank: 3 },
+      { playerId: "p6", rank: 6 },
+      { playerId: "p5", rank: 5 },
+    ];
+    const podium = ranking.slice(0, 3);
+    // tie on the 3rd place that did not fit on the podium stays in the rest, rest is in rank order
+    expect(rankingRest(ranking, podium).map((e) => e.playerId)).toEqual(["p4", "p5", "p6"]);
+    expect(rankingRest(ranking.slice(0, 2), ranking.slice(0, 2))).toEqual([]);
+    expect(rankingRest([], [])).toEqual([]);
+  });
 });
 
 describe("formatting", () => {
   it("formats scores, deltas, percent and result kinds", () => {
-    expect(formatScore(3.1)).toBe("3.10");
-    expect(formatDelta(0.85)).toBe("+0.85");
-    expect(formatDelta(0)).toBe("+0.00");
+    // Whole points, thousands separated by a non-breaking space.
+    expect(formatScore(842)).toBe("842");
+    expect(formatScore(12_450)).toBe("12\u00A0450");
+    expect(formatScore(1_000_000)).toBe("1\u00A0000\u00A0000");
+    expect(formatScore(749.6)).toBe("750");
+    expect(formatScore(0)).toBe("0");
+    expect(formatDelta(850)).toBe("+850");
+    expect(formatDelta(1_250)).toBe("+1\u00A0250");
+    expect(formatDelta(0)).toBe("+0");
     expect(formatPercent(0.643)).toBe(64);
     expect(resultKind(1)).toBe("correct");
     expect(resultKind(0.5)).toBe("partial");
@@ -104,10 +126,10 @@ describe("option mapping and layout", () => {
     expect(nicknameColor("Jano")).toMatch(/^var\(--opt-[1-6]\)$/);
   });
 
-  it("uses a 2 × 2 grid on the player only for ≤ 4 short options", () => {
+  it("puts player tiles side by side unless the options are long", () => {
     expect(playerChoiceGrid([{ text: "Sydney" }, { text: "Canberra" }])).toBe(true);
     expect(playerChoiceGrid([{ text: "Toto je veľmi dlhá odpoveď" }, { text: "B" }])).toBe(false);
-    expect(playerChoiceGrid(Array.from({ length: 5 }, () => ({ text: "x" })))).toBe(false);
+    expect(playerChoiceGrid(Array.from({ length: 5 }, () => ({ text: "x" })))).toBe(true);
     expect(hostChoiceColumns(4)).toBe(2);
     expect(hostChoiceColumns(6)).toBe(3);
   });

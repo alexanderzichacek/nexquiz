@@ -15,6 +15,34 @@
       "when": 1791180839341,
       "tag": "0001_questions_position_deferrable",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791263516940,
+      "tag": "0002_question_video",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791269404733,
+      "tag": "0003_quiz_pages",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791270560759,
+      "tag": "0004_points_in_thousands",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791886129783,
+      "tag": "0005_question_number",
+      "breakpoints": true
     }
   ]
 }

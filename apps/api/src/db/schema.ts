@@ -30,7 +30,7 @@ export const media = pgTable(
   "media",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    kind: text("kind", { enum: ["image", "audio"] }).notNull(),
+    kind: text("kind", { enum: ["image", "audio", "video"] }).notNull(),
     mime: text("mime").notNull(),
     sizeBytes: integer("size_bytes").notNull(),
     width: integer("width"),
@@ -38,7 +38,7 @@ export const media = pgTable(
     durationS: numeric("duration_s", { precision: 8, scale: 2 }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [check("media_kind_check", sql`${t.kind} in ('image','audio')`)],
+  (t) => [check("media_kind_check", sql`${t.kind} in ('image','audio','video')`)],
 );
 
 export const quizzes = pgTable("quizzes", {
@@ -61,17 +61,20 @@ export const questions = pgTable(
       .notNull()
       .references(() => quizzes.id, { onDelete: "cascade" }),
     position: integer("position").notNull(),
-    type: text("type", { enum: ["single", "multi", "order", "hotspot", "text", "music"] }).notNull(),
+    type: text("type", { enum: ["single", "multi", "order", "hotspot", "text", "music", "number", "page"] }).notNull(),
+    /** Question text; the title of a `page`. */
     prompt: text("prompt").notNull(),
     imageId: uuid("image_id").references(() => media.id),
     audioId: uuid("audio_id").references(() => media.id),
+    videoId: uuid("video_id").references(() => media.id),
+    /** A `page` has no time limit and no points: it stores the column defaults. */
     timeLimit: integer("time_limit").notNull().default(30),
-    points: numeric("points", { precision: 6, scale: 2 }).notNull().default("1"),
-    /** Validated by the Zod schema for `type`. */
+    points: numeric("points", { precision: 6, scale: 2 }).notNull().default("1000"),
+    /** Validated by the Zod schema for `type`; `{ description }` for a `page`. */
     data: jsonb("data").$type<unknown>().notNull(),
   },
   (t) => [
-    check("questions_type_check", sql`${t.type} in ('single','multi','order','hotspot','text','music')`),
+    check("questions_type_check", sql`${t.type} in ('single','multi','order','hotspot','text','music','number','page')`),
     check("questions_time_limit_check", sql`${t.timeLimit} between 5 and 120`),
     unique("questions_quiz_id_position_key").on(t.quizId, t.position),
   ],
@@ -98,7 +101,8 @@ export const gamePlayers = pgTable("game_players", {
     .notNull()
     .references(() => games.id, { onDelete: "cascade" }),
   nickname: text("nickname").notNull(),
-  score: numeric("score", { precision: 8, scale: 2 }).notNull().default("0"),
+  // Totals of games with thousands of points per question: 200 × 9999 does not fit into 8 digits.
+  score: numeric("score", { precision: 10, scale: 2 }).notNull().default("0"),
   finalRank: integer("final_rank"),
 });
 

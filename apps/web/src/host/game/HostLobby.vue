@@ -7,7 +7,10 @@ import { plural, sk } from "@/i18n/sk";
 import PlayerChip from "./PlayerChip.vue";
 import QrCard from "./QrCard.vue";
 
-/** Lobby: quiz title, join URL, big PIN, QR code, live players with Kick, „Spustiť“. */
+/**
+ * Lobby: quiz title, join URL, big PIN, QR code, live players with Kick,
+ * „Spustiť“. Fits the stage: many players scroll inside the chips area.
+ */
 const props = defineProps<{
   pin: string;
   quizTitle: string;
@@ -23,10 +26,9 @@ const canStart = computed(() => props.players.length >= 1);
 
 <template>
   <section class="lobby">
-    <h1 class="lobby__title">{{ quizTitle }}</h1>
-
     <div class="lobby__join">
       <div class="lobby__info">
+        <h1 class="lobby__title line-clamp">{{ quizTitle }}</h1>
         <p class="lobby__line">
           <span class="lobby__label">{{ sk.game.joinAt }}</span>
           <strong class="lobby__url">{{ shortUrl }}</strong>
@@ -36,25 +38,31 @@ const canStart = computed(() => props.players.length >= 1);
           <PinDisplay :pin="pin" class="lobby__pin" />
         </p>
       </div>
-      <QrCard :pin="pin" :short-url="shortUrl" />
+      <QrCard :pin="pin" :short-url="shortUrl" class="lobby__qr" />
     </div>
 
     <div class="lobby__players">
-      <p class="lobby__count tabular" role="status">
-        <span aria-hidden="true">{{ sk.game.playersIcon }} </span>{{ plural(players.length, sk.plural.players) }}
-      </p>
+      <div class="lobby__players-bar">
+        <p class="lobby__count tabular" role="status">
+          <span aria-hidden="true">{{ sk.game.playersIcon }} </span>{{ plural(players.length, sk.plural.players) }}
+        </p>
+        <BaseButton
+          variant="primary"
+          large
+          class="lobby__start"
+          :disabled="!canStart"
+          :loading="starting"
+          @click="$emit('start')"
+        >
+          {{ sk.game.start }}
+        </BaseButton>
+      </div>
       <p v-if="players.length === 0" class="lobby__waiting">{{ sk.game.waitingForPlayers }}</p>
       <TransitionGroup tag="ul" name="chip" class="lobby__chips">
         <li v-for="p in players" :key="p.id">
           <PlayerChip :player="p" kickable @kick="$emit('kick', p)" />
         </li>
       </TransitionGroup>
-    </div>
-
-    <div class="lobby__actions">
-      <BaseButton variant="primary" large class="lobby__start" :disabled="!canStart" :loading="starting" @click="$emit('start')">
-        {{ sk.game.start }}
-      </BaseButton>
     </div>
   </section>
 </template>
@@ -63,32 +71,38 @@ const canStart = computed(() => props.players.length >= 1);
 .lobby {
   display: flex;
   flex-direction: column;
-  gap: var(--s-5);
+  gap: var(--stage-gap);
   flex: 1;
   min-height: 0;
 }
 
 .lobby__title {
+  --lines: 2;
   font-size: var(--fs-host-question);
   font-weight: var(--fw-bold);
   line-height: 1.15;
+  overflow-wrap: anywhere;
 }
 
 .lobby__join {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--s-6);
-  padding-bottom: var(--s-5);
+  flex: none;
+  padding-bottom: var(--stage-gap);
   border-bottom: var(--border-w) solid var(--border);
 }
 
 .lobby__info {
   display: flex;
   flex-direction: column;
-  gap: var(--s-4);
+  gap: var(--stage-gap);
   min-width: 0;
+}
+
+.lobby__qr {
+  flex: none;
 }
 
 .lobby__line {
@@ -122,6 +136,14 @@ const canStart = computed(() => props.players.length >= 1);
   min-height: 0;
 }
 
+.lobby__players-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  flex: none;
+}
+
 .lobby__count {
   font-size: var(--fs-host-option);
   font-weight: var(--fw-bold);
@@ -137,19 +159,17 @@ const canStart = computed(() => props.players.length >= 1);
   align-content: flex-start;
   gap: var(--s-3);
   margin: 0;
-  padding: 0;
+  /* room for focus rings inside the scroll box */
+  padding: var(--s-1);
   list-style: none;
+  flex: 1 1 0;
+  min-height: 0;
   overflow-y: auto;
-}
-
-.lobby__actions {
-  display: flex;
-  justify-content: flex-end;
 }
 
 .lobby__start {
   font-size: var(--fs-host-option);
-  min-height: calc(var(--btn-h-player) * 1.4);
+  min-height: calc(var(--btn-h-player) * 1.2);
   padding: 0 var(--s-7);
 }
 

@@ -1,4 +1,4 @@
-import { gameStateNameSchema, gameStatusSchema, type QuizSnapshot } from "@nexquiz/shared";
+import { avatarSchema, DEFAULT_AVATAR, gameStateNameSchema, gameStatusSchema, type QuizSnapshot } from "@nexquiz/shared";
 import { z } from "zod";
 
 /**
@@ -37,6 +37,8 @@ export type GameMeta = z.infer<typeof gameMetaSchema>;
 /** Value in `game:{pin}:players`. */
 export const playerRecordSchema = z.object({
   nickname: z.string(),
+  /** Default for records written before avatars existed. */
+  avatar: avatarSchema.default(DEFAULT_AVATAR),
   tokenHash: z.string(),
   connected: z.boolean(),
   joinedAt: z.number().int(),

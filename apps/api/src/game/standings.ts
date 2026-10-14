@@ -3,6 +3,8 @@ import {
   rankChange,
   rankPlayers,
   toHundredths,
+  DEFAULT_AVATAR,
+  type Avatar,
   type GameFinishedEvent,
   type LeaderboardEvent,
   type RankingEntry,
@@ -15,6 +17,7 @@ export const PODIUM_SIZE = 3;
 export interface Standing {
   playerId: string;
   nickname: string;
+  avatar: Avatar;
   connected: boolean;
   /** Total score in hundredths (sum of all results). */
   scoreHundredths: number;
@@ -68,6 +71,7 @@ export function computeStandings(
     return {
       playerId: r.playerId,
       nickname: player?.nickname ?? "",
+      avatar: player?.avatar ?? DEFAULT_AVATAR,
       connected: player?.connected ?? false,
       scoreHundredths: r.scoreHundredths,
       correctAnsweredMs: r.correctAnsweredMs,
@@ -78,12 +82,15 @@ export function computeStandings(
   });
 }
 
-export function buildLeaderboard(index: number, standings: readonly Standing[]): LeaderboardEvent {
+/** `index` = item index of the question, `number` = its 1-based question number (pages are not counted). */
+export function buildLeaderboard(index: number, number: number, standings: readonly Standing[]): LeaderboardEvent {
   return {
     index,
+    number,
     top: standings.slice(0, LEADERBOARD_SIZE).map((s) => ({
       playerId: s.playerId,
       nickname: s.nickname,
+      avatar: s.avatar,
       score: fromHundredths(s.scoreHundredths),
       delta: fromHundredths(s.deltaHundredths),
       rank: s.rank,
@@ -96,6 +103,7 @@ export function buildRanking(standings: readonly Standing[]): RankingEntry[] {
   return standings.map((s) => ({
     playerId: s.playerId,
     nickname: s.nickname,
+    avatar: s.avatar,
     score: fromHundredths(s.scoreHundredths),
     rank: s.rank,
   }));

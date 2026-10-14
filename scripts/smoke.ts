@@ -359,6 +359,8 @@ function answersFor(q: Question, start: QuestionStartEvent): { right: unknown; w
         right: { answers: { artist: "Metalica", title: "nothing else matters" } },
         wrong: { answers: { artist: "Megadeth", title: "Symphony of Destruction" } },
       };
+    case "number":
+      return { right: { value: q.data.answer }, wrong: { value: q.data.answer + 1000 } };
   }
 }
 
@@ -560,6 +562,16 @@ async function playGame(quizId: string, questions: Question[]): Promise<{ gameId
       assert(hostStart.media.audioId === question.media?.audioId, "host gets media.audioId");
       assert(p1Start.media.audioId === undefined, "player does not get media.audioId");
       assert(hostStart.type === "music" && hostStart.clip.duration === 1, "music question:start carries the clip");
+
+      // Players with sound on their own device get only the cut clip (ffmpeg), never the tagged file.
+      const clipPath = `/api/games/${pin}/questions/${index}/clip`;
+      const clip = await http(clipPath, { auth: false, headers: { authorization: `Bearer ${p1.token}` } });
+      assert(clip.status === 200, `player clip: expected HTTP 200, got ${clip.status} ${await clip.clone().text()}`);
+      assert(clip.headers.get("content-type") === "audio/mpeg", "player clip is audio/mpeg");
+      const clipData = Buffer.from(await clip.arrayBuffer());
+      assert(clipData.length > 0 && clipData.toString("latin1", 0, 3) !== "ID3", "player clip without ID3 tags");
+      equal(await json(await http(clipPath, { auth: false }), 401, "clip without token"), { error: "INVALID_TOKEN" }, "clip without token");
+      ok("player audio clip: cut on the server, no tags, only with the player token");
     }
     if (question.type === "hotspot") assert(p1Start.media.imageId === question.media?.imageId, "player gets imageId");
     ok("question:start for host and players, no secrets in payloads");

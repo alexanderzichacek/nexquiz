@@ -1,8 +1,10 @@
 import {
+  clipParamsSchema,
   createGameRequestSchema,
   gameResultsQuerySchema,
   idParamsSchema,
   pinParamsSchema,
+  playerTokenSchema,
   type CreateGameResponse,
   type GameExistsResponse,
   type GameHistoryResponse,
@@ -10,35 +12,52 @@ import {
 } from "@nexquiz/shared";
 import type { FastifyInstance } from "fastify";
 import QRCode from "qrcode";
-import type { GameHistory } from "../app.js";
+import type { ClipSource, GameHistory } from "../app.js";
 import { AppError } from "../errors.js";
 import type { GameService } from "../game/GameService.js";
+import { CLIP_MIME } from "../media/clips.js";
 import { resultsToCsv } from "./csv.js";
 import { requireHost } from "./session.js";
 import { parseInput } from "./validation.js";
 
-/** Public PIN check is rate limited per IP. */
-const EXISTS_RATE_LIMIT = { max: 30, timeWindow: "1 minute" } as const;
-
 export interface GameRoutesOptions {
   games: GameService;
   history: GameHistory;
+  clips: ClipSource;
   publicUrl: string | undefined;
+  /** Public PIN check: max. requests per IP and minute (`EXISTS_RATE_LIMIT_PER_MIN`). */
+  existsRateLimitPerMin: number;
 }
 
-/** Games: create, QR, exists (public), history, results (+ CSV). */
+/** Player token from `Authorization: Bearer {token}` (never in the URL, so it does not end up in logs). */
+function bearerToken(header: string | undefined): string {
+  const match = /^Bearer (\S+)$/.exec(header ?? "");
+  const token = playerTokenSchema.safeParse(match?.[1]);
+  if (!token.success) throw new AppError("INVALID_TOKEN");
+  return token.data;
+}
+
+/** Games: create, QR, exists (public), player audio clip, history, results (+ CSV). */
 export async function gameRoutes(app: FastifyInstance, opts: GameRoutesOptions): Promise<void> {
-  const { games, history } = opts;
+  const { games, history, clips } = opts;
 
   app.get(
     "/api/games/:pin/exists",
-    { config: { rateLimit: EXISTS_RATE_LIMIT } },
+    { config: { rateLimit: { max: opts.existsRateLimitPerMin, timeWindow: "1 minute" } } },
     async (req, reply): Promise<GameExistsResponse> => {
       reply.header("Cache-Control", "no-store");
       const params = pinParamsSchema.safeParse(req.params);
       return { exists: params.success ? await games.gameExists(params.data.pin) : false };
     },
   );
+
+  // Players with sound on their own device: the clip of the running question, cut and without tags.
+  app.get("/api/games/:pin/questions/:index/clip", async (req, reply) => {
+    const { pin, index } = parseInput(clipParamsSchema, req.params);
+    const { audioId, clip } = await games.playerClip(pin, bearerToken(req.headers.authorization), index);
+    const data = await clips.clip(audioId, clip);
+    return reply.type(CLIP_MIME).header("Cache-Control", "private, no-store").send(data);
+  });
 
   await app.register(async (scope) => {
     scope.addHook("onRequest", requireHost);

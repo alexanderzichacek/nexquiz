@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from "vue";
 import OptionShape from "./OptionShape.vue";
 import { optionColor, optionLetter } from "./options";
 
@@ -18,31 +18,75 @@ const props = withDefaults(
     size?: "player" | "host" | "compact";
     /** Renders a static element instead of a button (host screen). */
     readonly?: boolean;
+    /**
+     * Short options in a grid (player): shape + letter as a small badge in the
+     * corner, the text larger and centered.
+     */
+    badge?: boolean;
+    /**
+     * The tile fills a fixed-height grid cell (game screens): the text is
+     * clamped to the lines that fit, with an ellipsis instead of a cut line.
+     */
+    fill?: boolean;
   }>(),
-  { state: "idle", size: "player", readonly: false },
+  { state: "idle", size: "player", readonly: false, badge: false, fill: false },
 );
 
 defineEmits<{ select: [] }>();
 
-const style = computed(() => ({ "--tile-color": optionColor(props.index) }));
+const style = computed(() => ({
+  "--tile-color": optionColor(props.index),
+  ...(lines.value === null ? {} : { "--lines": lines.value }),
+}));
 const letter = computed(() => optionLetter(props.index));
 const tag = computed(() => (props.readonly ? "div" : "button"));
+
+// ---- `fill`: number of text lines that fit the tile height ----
+const root = useTemplateRef<HTMLElement>("root");
+const textEl = useTemplateRef<HTMLElement>("textEl");
+const lines = ref<number | null>(null);
+let observer: ResizeObserver | null = null;
+
+function measure(): void {
+  const el = root.value;
+  const text = textEl.value;
+  if (!props.fill || !el || !text) return;
+  const box = getComputedStyle(el);
+  const available = el.clientHeight - parseFloat(box.paddingTop) - parseFloat(box.paddingBottom);
+  const lineHeight = parseFloat(getComputedStyle(text).lineHeight);
+  if (!(lineHeight > 0)) return;
+  lines.value = Math.max(1, Math.floor(available / lineHeight));
+}
+
+onMounted(() => {
+  if (!props.fill) return;
+  const el = root.value;
+  if (!el) return;
+  observer = new ResizeObserver(measure);
+  observer.observe(el);
+  measure();
+});
+onBeforeUnmount(() => observer?.disconnect());
+watch(() => props.text, measure, { flush: "post" });
 </script>
 
 <template>
   <component
     :is="tag"
+    ref="root"
     :type="readonly ? undefined : 'button'"
     class="tile"
-    :class="[`tile--${state}`, `tile--${size}`]"
+    :class="[`tile--${state}`, `tile--${size}`, { 'tile--badge': badge }]"
     :style="style"
     :disabled="readonly ? undefined : state === 'disabled'"
     :aria-pressed="readonly ? undefined : state === 'selected'"
     @click="readonly || state === 'disabled' ? undefined : $emit('select')"
   >
-    <OptionShape :index="index" class="tile__shape" />
-    <span class="tile__letter">{{ letter }}</span>
-    <span class="tile__text">{{ text }}</span>
+    <span class="tile__mark">
+      <OptionShape :index="index" class="tile__shape" />
+      <span class="tile__letter">{{ letter }}</span>
+    </span>
+    <span ref="textEl" class="tile__text">{{ text }}</span>
     <span v-if="state === 'selected' || state === 'correct'" class="tile__check" aria-hidden="true">✓</span>
   </component>
 </template>
@@ -55,6 +99,7 @@ const tag = computed(() => (props.readonly ? "div" : "button"));
   width: 100%;
   min-height: var(--tap-min);
   padding: var(--s-3) var(--s-4);
+  overflow: hidden;
   border: 0;
   border-radius: var(--radius);
   background: var(--tile-color);
@@ -75,13 +120,14 @@ button.tile:active:not(:disabled) {
   transform: scale(calc(1 - 0.02 * var(--motion)));
 }
 
+/* `--fit` = text fit step of the parent (choiceLayout.ts), 1 when not set */
 .tile--player {
-  font-size: var(--fs-player-option);
+  font-size: max(var(--fs-player-min), calc(var(--fs-player-option) * var(--fit, 1)));
 }
 
 .tile--host {
-  font-size: var(--fs-host-option);
-  padding: var(--s-4) var(--s-5);
+  font-size: max(var(--fs-host-label), calc(var(--fs-host-option) * var(--fit, 1)));
+  padding: var(--stage-tile-pad) var(--s-5);
 }
 
 .tile--compact {
@@ -94,31 +140,64 @@ button.tile:active:not(:disabled) {
   height: 1.2em;
 }
 
+.tile__mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex: none;
+}
+
 .tile__letter {
   font-weight: var(--fw-black);
 }
 
+/* `fill` sets `--lines` (the lines that fit the tile height) */
 .tile__text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--lines, none);
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
   overflow-wrap: anywhere;
+  line-height: 1.25;
 }
 
-.tile__check {
-  font-weight: var(--fw-black);
+/* player list rows: shape + letter in a fixed column, so the texts line up */
+.tile--player .tile__letter {
+  min-width: 1ch;
 }
 
-.tile--selected {
-  box-shadow:
-    0 0 0 var(--ring-selected) var(--on-option),
-    var(--shadow-lg);
+/* short options in a grid: small corner badge, larger centered text */
+.tile--badge {
+  position: relative;
+  justify-content: center;
+  padding: var(--s-5) var(--s-3) var(--s-3);
+  text-align: center;
 }
 
-.tile--wrong {
-  opacity: var(--opacity-muted);
+.tile--badge .tile__mark {
+  position: absolute;
+  top: var(--s-2);
+  left: var(--s-3);
+  gap: var(--s-1);
+  font-size: var(--fs-label);
 }
 
-.tile--disabled {
-  opacity: var(--opacity-disabled);
-  cursor: not-allowed;
+.tile--badge .tile__shape {
+  width: var(--fs-label);
+  height: var(--fs-label);
+}
+
+.tile--badge .tile__text {
+  flex: 0 1 auto;
+  font-size: max(var(--fs-player-min), calc(var(--fs-player-grid-option) * var(--fit, 1)));
+  font-weight: var(--fw-bold);
+}
+
+.tile--badge .tile__check {
+  position: absolute;
+  top: var(--s-2);
+  right: var(--s-3);
 }
 </style>

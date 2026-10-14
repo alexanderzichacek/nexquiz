@@ -1,4 +1,4 @@
-import type { Quiz, QuizSettings, QuizSnapshot } from "@nexquiz/shared";
+import type { Page, Question, Quiz, QuizSettings, QuizSnapshot } from "@nexquiz/shared";
 import type { AppServices } from "../app.js";
 import { GameService } from "../game/GameService.js";
 import type { GameLogger, GameNotifier, GamePersistence, PersistedAnswer, PersistedPlayer } from "../game/ports.js";
@@ -18,8 +18,38 @@ export const Q = {
   music: "aaaaaaaa-0000-4000-8000-000000000006",
 } as const;
 
+export const NUMBER_Q = "aaaaaaaa-0000-4000-8000-000000000007";
+
+/** A `number` question (answer 2026, 1000 points, 10 s). */
+export function numberQuestion(data: Partial<Extract<Question, { type: "number" }>["data"]> = {}): Question {
+  return {
+    id: NUMBER_Q,
+    type: "number",
+    prompt: "Which year was it made?",
+    timeLimit: 10,
+    points: 1000,
+    data: { answer: 2026, mode: "closest", tolerance: 0, ...data },
+  };
+}
+
+export const PAGE_ID = "bbbbbbbb-0000-4000-8000-000000000001";
+
+/** A page with a title, a description and an image. */
+export function samplePage(id: string = PAGE_ID): Page {
+  return {
+    id,
+    type: "page",
+    title: "Category: Sport",
+    description: "Next come the sport questions.",
+    media: { imageId: IMAGE_ID },
+  };
+}
+
+/** `Quiz` whose items are known to be questions (no pages), so tests can index them as such. */
+export type SampleQuiz = Omit<Quiz, "questions"> & { questions: Question[] };
+
 /** One question of every type (10 s each, 1 point). */
-export function sampleQuiz(settings: Partial<QuizSettings> = {}): Quiz {
+export function sampleQuiz(settings: Partial<QuizSettings> = {}): SampleQuiz {
   return {
     id: QUIZ_ID,
     title: "Test quiz",
@@ -115,7 +145,7 @@ export function sampleQuiz(settings: Partial<QuizSettings> = {}): Quiz {
 }
 
 export type RecordedEvent =
-  | { kind: "lobbyPlayers" | "questionStart" | "questionStartPlayers" | "questionProgress" | "questionEnd" | "questionReveal" | "leaderboard" | "gameFinished"; pin: string; payload: unknown }
+  | { kind: "lobbyPlayers" | "questionStart" | "questionStartPlayers" | "pageShow" | "questionProgress" | "questionEnd" | "questionReveal" | "leaderboard" | "gameFinished"; pin: string; payload: unknown }
   | { kind: "playerResult"; pin: string; playerId: string; payload: unknown }
   | { kind: "playerKicked"; pin: string; playerId: string; payload: null };
 
@@ -130,6 +160,9 @@ export class RecordingNotifier implements GameNotifier {
   questionStart(pin: string, payload: { host: unknown; players: unknown }): void {
     this.events.push({ kind: "questionStart", pin, payload: payload.host });
     this.events.push({ kind: "questionStartPlayers", pin, payload: payload.players });
+  }
+  pageShow(pin: string, payload: unknown): void {
+    this.events.push({ kind: "pageShow", pin, payload });
   }
   questionProgress(pin: string, payload: unknown): void {
     this.events.push({ kind: "questionProgress", pin, payload });
@@ -275,6 +308,11 @@ export function fakeAppServices(games: GameService): AppServices {
           throw new Error("not used");
         },
         remove: async () => undefined,
+      },
+    },
+    clips: {
+      clip: async () => {
+        throw new Error("not used");
       },
     },
     history: { history: async () => [], results: async () => null },

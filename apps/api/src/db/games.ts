@@ -1,4 +1,5 @@
 import {
+  isQuestion,
   quizSnapshotSchema,
   type GameHistoryItem,
   type GameResultsResponse,
@@ -177,8 +178,11 @@ export class GameRepository implements GamePersistence {
       .orderBy(asc(gameAnswers.questionIndex), asc(gameAnswers.playerId));
     return {
       game: toHistoryItem(row),
+      // Pages have no answers; `index` stays the position among all items (= `game_answers.question_index`).
       questions: snapshot.success
-        ? snapshot.data.questions.map((q, index) => ({ index, type: q.type, prompt: q.prompt, points: q.points }))
+        ? snapshot.data.questions.flatMap((q, index) =>
+            isQuestion(q) ? [{ index, type: q.type, prompt: q.prompt, points: q.points }] : [],
+          )
         : [],
       players: players.map((p) => ({
         id: p.id,

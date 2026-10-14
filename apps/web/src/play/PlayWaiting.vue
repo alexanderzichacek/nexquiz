@@ -1,14 +1,17 @@
 <script setup lang="ts">
+import type { Avatar } from "@nexquiz/shared";
+import PlayerAvatar from "@/components/PlayerAvatar.vue";
 import { format, sk } from "@/i18n/sk";
 import { formatScore } from "@/lib/format";
 
-/** „Si v hre!“ + nickname; between questions also the current score and rank. */
-defineProps<{ nickname: string; message: string; score?: number | null; rank?: number | null }>();
+/** „Si v hre!“ + avatar and nickname; between questions also the current score and rank. */
+defineProps<{ nickname: string; avatar: Avatar; message: string; score?: number | null; rank?: number | null }>();
 </script>
 
 <template>
   <section class="waiting" role="status">
     <p class="waiting__in">{{ sk.play.inGame }}</p>
+    <PlayerAvatar :avatar="avatar" class="waiting__avatar" />
     <p class="waiting__nick">{{ nickname }}</p>
     <p v-if="score !== undefined && score !== null" class="waiting__score tabular">
       {{
@@ -28,13 +31,25 @@ defineProps<{ nickname: string; message: string; score?: number | null; rank?: n
   justify-content: center;
   gap: var(--s-4);
   flex: 1;
+  min-height: 0;
   text-align: center;
+}
+
+/* short screens (landscape phone): tighter, still without scrolling */
+@media (max-height: 480px) {
+  .waiting {
+    gap: var(--s-2);
+  }
 }
 
 .waiting__in {
   font-size: var(--fs-player-question);
   font-weight: var(--fw-bold);
   color: var(--success);
+}
+
+.waiting__avatar {
+  --avatar-size: var(--avatar-waiting);
 }
 
 .waiting__nick {

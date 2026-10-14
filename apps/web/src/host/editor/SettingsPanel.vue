@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LIMITS, SCORING_MODES, TOLERANCES, type Question, type QuizUpdateRequest } from "@nexquiz/shared";
+import { isQuestion, LIMITS, SCORING_MODES, TOLERANCES, type Question, type QuizUpdateRequest } from "@nexquiz/shared";
 import { computed } from "vue";
 import BaseButton from "@/components/BaseButton.vue";
 import { sk } from "@/i18n/sk";
@@ -23,10 +23,14 @@ const TOLERANCE_LABELS = {
 } as const;
 
 /** The selected question as stored in the draft (mutable). */
-const current = computed(() => quiz.value.questions.find((q) => q.id === props.question?.id) ?? null);
+const current = computed<Question | null>(() => {
+  const item = quiz.value.questions.find((q) => q.id === props.question?.id);
+  return item && isQuestion(item) ? item : null;
+});
 
 const startBlocked = computed<string | null>(() => {
-  if (quiz.value.questions.length === 0) return sk.editor.startBlockedEmpty;
+  // A quiz of pages only has nothing to play.
+  if (!quiz.value.questions.some(isQuestion)) return sk.editor.startBlockedEmpty;
   if (!editor.validation.valid) return sk.editor.startBlockedInvalid;
   return null;
 });
@@ -75,7 +79,7 @@ function onDescription(event: Event): void {
           :value="current.points"
           :min="LIMITS.points.min"
           :max="LIMITS.points.max"
-          step="0.5"
+          step="50"
           @input="setPoints"
         />
       </label>

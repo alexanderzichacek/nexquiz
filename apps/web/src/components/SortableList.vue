@@ -4,7 +4,9 @@ import { sk } from "@/i18n/sk";
 
 /**
  * Reorderable list: drag & drop via the ⠿ handle (SortableJS) plus ↑↓ buttons
- * for keyboard, screen readers and imprecise touch.
+ * for keyboard, screen readers and imprecise touch. With `slotArrows` the
+ * list does not render the ↑↓ buttons; the slot renders them itself from the
+ * `move` / `first` / `last` slot props (narrow lists with own item actions).
  */
 const items = defineModel<T[]>({ required: true });
 withDefaults(
@@ -13,11 +15,14 @@ withDefaults(
     dense?: boolean;
     /** Player size: handle and ↑↓ buttons are ≥ 48 px tap targets. */
     large?: boolean;
+    slotArrows?: boolean;
   }>(),
-  { disabled: false, dense: false, large: false },
+  { disabled: false, dense: false, large: false, slotArrows: false },
 );
 
-defineSlots<{ default(props: { item: T; index: number }): unknown }>();
+defineSlots<{
+  default(props: { item: T; index: number; move: (delta: -1 | 1) => void; first: boolean; last: boolean }): unknown;
+}>();
 
 function move(index: number, delta: -1 | 1): void {
   const target = index + delta;
@@ -54,9 +59,15 @@ function onUpdate(value: unknown[]): void {
       <li class="sortable__item">
         <span class="sortable__handle" :title="sk.common.dragHandle" aria-hidden="true">⠿</span>
         <div class="sortable__content">
-          <slot :item="element" :index="index" />
+          <slot
+            :item="element"
+            :index="index"
+            :move="(delta: -1 | 1) => move(index, delta)"
+            :first="index === 0"
+            :last="index === items.length - 1"
+          />
         </div>
-        <span class="sortable__arrows">
+        <span v-if="!slotArrows" class="sortable__arrows">
           <button
             type="button"
             class="sortable__arrow"
@@ -158,8 +169,9 @@ function onUpdate(value: unknown[]): void {
   min-height: var(--tap-min);
 }
 
+/* `--fit`: text fit step of the parent (choiceLayout.ts), 1 when not set */
 .sortable--large .sortable__item {
-  font-size: var(--fs-player-option);
+  font-size: max(var(--fs-player-min), calc(var(--fs-player-option) * var(--fit, 1)));
   font-weight: var(--fw-semibold);
 }
 

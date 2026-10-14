@@ -13,6 +13,7 @@ import { AppError, isAppError } from "./errors.js";
 import { GameService } from "./game/GameService.js";
 import { noopNotifier, type GameNotifier } from "./game/ports.js";
 import { TimerScheduler, type Scheduler } from "./game/scheduler.js";
+import { ClipService, FfmpegClipCutter } from "./media/clips.js";
 import { MediaService } from "./media/service.js";
 import { LocalDiskMediaStorage } from "./media/storage.js";
 import { authRoutes } from "./rest/auth.js";
@@ -34,10 +35,13 @@ const MB = 1024 * 1024;
 export type QuizStore = Pick<QuizRepository, "list" | "get" | "create" | "update" | "duplicate" | "delete">;
 export type MediaFiles = Pick<MediaService, "upload" | "get" | "storage">;
 export type GameHistory = Pick<GameRepository, "history" | "results">;
+export type ClipSource = Pick<ClipService, "clip">;
 
 export interface AppServices {
   quizzes: QuizStore;
   media: MediaFiles;
+  /** Audio clips for players with sound on their own device. */
+  clips: ClipSource;
   games: GameService;
   history: GameHistory;
 }
@@ -70,6 +74,7 @@ export function createServices(app: FastifyInstance, deps: AppDeps): AppServices
   const media = new MediaService(new LocalDiskMediaStorage(config.MEDIA_DIR), new MediaRepository(deps.db.db), {
     imageBytes: config.MAX_IMAGE_MB * MB,
     audioBytes: config.MAX_AUDIO_MB * MB,
+    videoBytes: config.MAX_VIDEO_MB * MB,
   });
   const games = new GameService({
     store: new RedisGameStore(deps.redis.redis, Math.round(config.GAME_TTL_HOURS * 3600)),
@@ -79,7 +84,8 @@ export function createServices(app: FastifyInstance, deps: AppDeps): AppServices
     scheduler: deps.scheduler ?? new TimerScheduler(),
     log: app.log.child({ module: "game" }),
   });
-  return { quizzes, media, games, history };
+  const clips = new ClipService(media, new FfmpegClipCutter());
+  return { quizzes, media, clips, games, history };
 }
 
 function errorCodeForStatus(status: number, isValidation: boolean): ErrorCode {
@@ -125,7 +131,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
   await app.register(fastifyMultipart, {
     limits: {
-      fileSize: Math.max(config.MAX_IMAGE_MB, config.MAX_AUDIO_MB) * MB,
+      fileSize: Math.max(config.MAX_IMAGE_MB, config.MAX_AUDIO_MB, config.MAX_VIDEO_MB) * MB,
       files: 1,
       fields: 10,
       parts: 20,
@@ -139,7 +145,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await authRoutes(app, { adminPassword: config.ADMIN_PASSWORD });
   await quizRoutes(app, { quizzes: services.quizzes });
   await mediaRoutes(app, { media: services.media });
-  await gameRoutes(app, { games: services.games, history: services.history, publicUrl: config.PUBLIC_URL });
+  await gameRoutes(app, {
+    games: services.games,
+    history: services.history,
+    clips: services.clips,
+    publicUrl: config.PUBLIC_URL,
+    existsRateLimitPerMin: config.EXISTS_RATE_LIMIT_PER_MIN,
+  });
   await staticRoutes(app, deps.publicDir ?? PUBLIC_DIR);
 
   return app;

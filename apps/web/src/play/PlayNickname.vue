@@ -1,14 +1,22 @@
 <script setup lang="ts">
-import { formatPin, NICKNAME_MAX, nicknameSchema } from "@nexquiz/shared";
+import { formatPin, NICKNAME_MAX, nicknameSchema, type Avatar } from "@nexquiz/shared";
 import { computed, ref } from "vue";
 import BaseButton from "@/components/BaseButton.vue";
 import { format, sk } from "@/i18n/sk";
+import { randomAvatar } from "@/lib/avatar";
+import AvatarPicker from "./AvatarPicker.vue";
+import MediaToggle from "./MediaToggle.vue";
 import type { JoinError } from "./usePlayGame";
 
-/** Nickname step: 1–20 characters, unique in the game (the server answers `NICK_TAKEN`). */
-const props = defineProps<{ pin: string; join: (nickname: string) => Promise<JoinError | null> }>();
+/**
+ * Nickname step: avatar (random start, the player may change it), a
+ * nickname of 1–20 characters, unique in the game (the server answers
+ * `NICK_TAKEN`), and the opt-in sound and video on this device.
+ */
+const props = defineProps<{ pin: string; join: (nickname: string, avatar: Avatar) => Promise<JoinError | null> }>();
 
 const nickname = ref("");
+const avatar = ref<Avatar>(randomAvatar());
 const error = ref<string | null>(null);
 const joining = ref(false);
 
@@ -27,7 +35,7 @@ async function submit(): Promise<void> {
   joining.value = true;
   error.value = null;
   try {
-    const result = await props.join(nickname.value.trim());
+    const result = await props.join(nickname.value.trim(), avatar.value);
     if (result) error.value = MESSAGES[result];
   } finally {
     joining.value = false;
@@ -38,6 +46,7 @@ async function submit(): Promise<void> {
 <template>
   <form class="nick" novalidate @submit.prevent="submit">
     <p class="nick__pin tabular">{{ format(sk.play.pin, { pin: formatPin(pin) }) }}</p>
+    <AvatarPicker v-model="avatar" />
     <label class="nick__field">
       <span class="nick__label">{{ sk.play.nicknameLabel }}</span>
       <input
@@ -57,6 +66,7 @@ async function submit(): Promise<void> {
       />
       <span id="nick-error" class="nick__error" role="alert">{{ error ?? "" }}</span>
     </label>
+    <MediaToggle hint />
     <BaseButton type="submit" variant="primary" block large :disabled="!valid" :loading="joining">
       {{ sk.play.enter }}
     </BaseButton>

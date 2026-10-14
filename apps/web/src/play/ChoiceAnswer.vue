@@ -2,20 +2,26 @@
 import type { Option } from "@nexquiz/shared";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import AnswerTile, { type AnswerTileState } from "@/components/AnswerTile.vue";
-import { playerChoiceGrid } from "@/components/choiceLayout";
+import { playerChoiceLayout } from "@/components/choiceLayout";
 import { sk } from "@/i18n/sk";
 import { optionIndexForKey } from "@/lib/answerKeys";
+import { useMediaQuery } from "@/lib/useMediaQuery";
 import SubmitBar from "./SubmitBar.vue";
 
 /**
  * `single`: one tap submits. `multi`: toggle tiles + „Odoslať“.
  * On PC the keys A–F / 1–6 pick the option with that letter / number.
+ * Short options are tiles in a grid, anything longer a list (one row per
+ * option); the block keeps its natural height at the bottom (thumb zone) and
+ * the question image above takes the rest (`playerChoiceLayout`, choiceLayout.ts).
  */
 const props = defineProps<{ type: "single" | "multi"; options: readonly Option[]; locked: boolean }>();
 const emit = defineEmits<{ single: [optionId: string]; multi: [optionIds: string[]] }>();
 
 const selected = ref<string[]>([]);
-const grid = computed(() => playerChoiceGrid(props.options));
+/** A wide, short screen (landscape phone): tiles side by side even with long texts. */
+const landscape = useMediaQuery("(orientation: landscape) and (max-height: 599px)");
+const layout = computed(() => playerChoiceLayout(props.options, landscape.value));
 
 function pick(id: string): void {
   if (props.locked) return;
@@ -59,53 +65,96 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
 </script>
 
 <template>
-  <p v-if="type === 'multi'" class="choice__hint">{{ sk.play.multiHint }}</p>
-  <div class="choice" :class="{ 'choice--grid': grid }">
-    <AnswerTile
-      v-for="(o, i) in options"
-      :key="o.id"
-      :index="i"
-      :text="o.text"
-      :state="state(o.id)"
-      class="choice__tile"
-      :style="{ '--i': i }"
-      @select="pick(o.id)"
-    />
+  <div class="choice-answer">
+    <p v-if="type === 'multi'" class="choice__hint">{{ sk.play.multiHint }}</p>
+    <div
+      class="choice"
+      :class="[
+        `choice--${layout.mode}`,
+        `fit-${layout.fit}`,
+        { 'choice--odd': layout.columns === 2 && options.length % 2 === 1 },
+      ]"
+      :style="{ '--cols': layout.columns }"
+    >
+      <AnswerTile
+        v-for="(o, i) in options"
+        :key="o.id"
+        :index="i"
+        :text="o.text"
+        :state="state(o.id)"
+        :badge="layout.mode === 'grid'"
+        fill
+        class="choice__tile"
+        :style="{ '--i': i }"
+        @select="pick(o.id)"
+      />
+    </div>
+    <p class="choice__keys">{{ sk.play.keyboardHint }}</p>
+    <SubmitBar v-if="type === 'multi'" :disabled="locked || selected.length === 0" @submit="submitMulti" />
   </div>
-  <p class="choice__keys">{{ sk.play.keyboardHint }}</p>
-  <SubmitBar v-if="type === 'multi'" :disabled="locked || selected.length === 0" @submit="submitMulti" />
 </template>
 
 <style scoped>
-.choice {
-  display: grid;
-  grid-template-columns: 1fr;
+.choice-answer {
+  display: flex;
+  flex-direction: column;
   gap: var(--s-2);
+  min-height: 0;
 }
 
+/*
+ * Natural height, never stretched to fill the screen: rows are equally tall
+ * (`1fr` of an auto-height grid = the tallest row). If the screen is still too
+ * short (image already gone), the block shrinks and the rows with it; the
+ * tiles (`fill`) then clamp their text to the lines that still fit.
+ */
+.choice {
+  display: grid;
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+  gap: var(--s-2);
+  flex: 0 1 auto;
+  min-height: 0;
+}
+
+/* list: compact rows (one line ≈ --h-player-tile), shape + letter left, up to 3 lines of text */
+.choice--list {
+  grid-auto-rows: minmax(var(--tap-min), 1fr);
+}
+
+.choice--list .choice__tile {
+  --lines: 3;
+  padding-block: var(--s-4);
+}
+
+/* grid: short options only, tiles of a fixed comfortable height */
 .choice--grid {
-  grid-template-columns: 1fr 1fr;
+  grid-auto-rows: minmax(var(--tap-min), var(--h-player-grid-tile));
 }
 
 .choice--grid .choice__tile {
-  flex-direction: column;
-  justify-content: center;
-  align-items: flex-start;
-  min-height: calc(var(--btn-h-player) * 2);
+  --lines: 2;
+}
+
+/* an odd last tile in two columns spans both (3 or 5 options) */
+.choice--odd .choice__tile:last-child {
+  grid-column: 1 / -1;
 }
 
 .choice__tile {
-  min-height: var(--btn-h-player);
+  height: 100%;
+  min-height: var(--tap-min);
   animation: rise var(--t-slow) var(--ease) both;
   animation-delay: calc(var(--i) * var(--t-stagger));
 }
 
 .choice__hint {
+  flex: none;
   color: var(--text-muted);
   font-size: var(--fs-small);
 }
 
 .choice__keys {
+  flex: none;
   display: none;
   color: var(--text-muted);
   font-size: var(--fs-small);
