@@ -26,6 +26,7 @@ export const LIMITS = {
   quizDescription: { max: 1000 },
   pageTitle: { max: 120 },
   pageDescription: { max: 1000 },
+  explanationText: { max: 1000 },
   questions: { max: 200 },
 } as const;
 
@@ -224,6 +225,56 @@ export const numberDataSchema = z.object({
 });
 export type NumberData = z.infer<typeof numberDataSchema>;
 
+// ---------------------------------------------------------------------------
+// Explanation (an optional screen shown right after the reveal of a question)
+// ---------------------------------------------------------------------------
+
+export const explanationMediaSchema = z
+  .object({
+    imageId: idSchema.optional(),
+    videoId: idSchema.optional(),
+    audioId: idSchema.optional(),
+  })
+  .refine((m) => m.imageId === undefined || m.videoId === undefined, {
+    message: "An explanation has an image or a video, not both",
+    path: ["videoId"],
+  })
+  .refine((m) => m.audioId === undefined || m.videoId === undefined, {
+    message: "An explanation cannot have both audio and a video",
+    path: ["videoId"],
+  });
+export type ExplanationMedia = z.infer<typeof explanationMediaSchema>;
+
+/**
+ * Explanation of a question's answer: a text, an image or a video and / or an
+ * audio clip (at least one of them). Shown after the reveal, before the
+ * leaderboard; the host moves on with `host:next`.
+ */
+export const explanationSchema = z
+  .object({
+    text: z.string().trim().max(LIMITS.explanationText.max),
+    media: explanationMediaSchema.optional(),
+    /** Part of the audio played on the host screen; present exactly when `media.audioId` is set. */
+    clip: clipSchema.optional(),
+  })
+  .refine(
+    (e) =>
+      e.text !== "" ||
+      e.media?.imageId !== undefined ||
+      e.media?.videoId !== undefined ||
+      e.media?.audioId !== undefined,
+    { message: "An explanation needs a text, an image, a video or audio", path: ["content"] },
+  )
+  .refine((e) => e.media?.audioId === undefined || e.clip !== undefined, {
+    message: "Explanation audio requires a clip",
+    path: ["clip"],
+  })
+  .refine((e) => e.clip === undefined || e.media?.audioId !== undefined, {
+    message: "Explanation clip requires audio",
+    path: ["media", "audioId"],
+  });
+export type Explanation = z.infer<typeof explanationSchema>;
+
 /** Any text-like field (shared by `text` and `music`). */
 export type AnswerField = TextField | MusicField;
 export type FieldKey = AnswerField["key"];
@@ -242,6 +293,8 @@ const questionBaseShape = {
     .min(LIMITS.points.min)
     .max(LIMITS.points.max)
     .refine((p) => hasMaxDecimals(p, 2), { message: "Points may have at most 2 decimals" }),
+  /** Optional explanation screen after the reveal (off by default). */
+  explanation: explanationSchema.optional(),
 };
 
 export const singleQuestionSchema = z.object({

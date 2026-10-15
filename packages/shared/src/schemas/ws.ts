@@ -15,6 +15,7 @@ import { taggedAnswerSchema } from "./answer.js";
 import { avatarSchema, DEFAULT_AVATAR } from "./avatar.js";
 import {
   clipSchema,
+  explanationMediaSchema,
   hotspotTargetSchema,
   LIMITS,
   mediaRefSchema,
@@ -46,6 +47,7 @@ export const WS_EVENTS = {
   lobbyPlayers: "lobby:players",
   questionStart: "question:start",
   pageShow: "page:show",
+  explanationShow: "explanation:show",
   questionProgress: "question:progress",
   questionEnd: "question:end",
   questionReveal: "question:reveal",
@@ -212,6 +214,23 @@ export const pageShowEventSchema = z.object({
 });
 export type PageShowEvent = z.infer<typeof pageShowEventSchema>;
 
+/**
+ * `explanation:show` – the explanation of the current question after its
+ * reveal (state `EXPLANATION`). Players never get `media.audioId`, only the
+ * `clip` as a sign that there is something to listen to.
+ */
+export const explanationShowEventSchema = z.object({
+  /** Index of the explained question among all items of the quiz. */
+  index: indexSchema,
+  /** 1-based number of that question (pages are not counted). */
+  number: z.number().int().positive(),
+  prompt: z.string(),
+  text: z.string(),
+  media: explanationMediaSchema,
+  clip: clipSchema.optional(),
+});
+export type ExplanationShowEvent = z.infer<typeof explanationShowEventSchema>;
+
 export const questionProgressEventSchema = z.object({
   answered: z.number().int().nonnegative(),
   total: z.number().int().nonnegative(),
@@ -349,6 +368,8 @@ const gameStateBase = {
   question: questionStartEventSchema.nullable(),
   /** The page on screen (state `PAGE`). */
   page: pageShowEventSchema.nullable(),
+  /** The explanation on screen (state `EXPLANATION`). */
+  explanation: explanationShowEventSchema.nullable(),
   leaderboard: leaderboardEventSchema.nullable(),
   finished: gameFinishedEventSchema.nullable(),
 };
@@ -407,6 +428,7 @@ export interface HostServerToClientEvents {
   "lobby:players": (event: LobbyPlayersEvent) => void;
   "question:start": (event: QuestionStartEvent) => void;
   "page:show": (event: PageShowEvent) => void;
+  "explanation:show": (event: ExplanationShowEvent) => void;
   "question:progress": (event: QuestionProgressEvent) => void;
   "question:end": (event: QuestionEndEvent) => void;
   "question:reveal": (event: QuestionRevealEvent) => void;
@@ -425,6 +447,7 @@ export interface PlayServerToClientEvents {
   "lobby:players": (event: LobbyPlayersEvent) => void;
   "question:start": (event: QuestionStartEvent) => void;
   "page:show": (event: PageShowEvent) => void;
+  "explanation:show": (event: ExplanationShowEvent) => void;
   "question:end": (event: QuestionEndEvent) => void;
   "player:result": (event: PlayerResultEvent) => void;
   leaderboard: (event: LeaderboardEvent) => void;

@@ -1,4 +1,5 @@
 import type {
+  ExplanationShowEvent,
   GameFinishedEvent,
   LeaderboardEvent,
   LobbyPlayersEvent,
@@ -35,6 +36,11 @@ export class SocketNotifier implements GameNotifier {
   pageShow(pin: string, event: PageShowEvent): void {
     this.host?.to(gameRoom(pin)).emit("page:show", event);
     this.play?.to(gameRoom(pin)).emit("page:show", event);
+  }
+
+  explanationShow(pin: string, event: { host: ExplanationShowEvent; players: ExplanationShowEvent }): void {
+    this.host?.to(gameRoom(pin)).emit("explanation:show", event.host);
+    this.play?.to(gameRoom(pin)).emit("explanation:show", event.players);
   }
 
   questionProgress(pin: string, event: QuestionProgressEvent): void {

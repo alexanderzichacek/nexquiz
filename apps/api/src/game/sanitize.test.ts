@@ -1,12 +1,13 @@
 import {
+  explanationShowEventSchema,
   hostGameStateSchema,
   playerGameStateSchema,
   questionStartEventSchema,
   type Question,
 } from "@nexquiz/shared";
 import { describe, expect, it } from "vitest";
-import { createHarness, numberQuestion, sampleQuiz } from "../test/helpers.js";
-import { buildQuestionStart, forPlayers } from "./sanitize.js";
+import { createHarness, EXPLANATION_AUDIO_ID, IMAGE_ID, numberQuestion, sampleExplanation, sampleQuiz } from "../test/helpers.js";
+import { buildExplanationShow, buildQuestionStart, explanationForPlayers, forPlayers } from "./sanitize.js";
 import { presentationOrder, shuffleNotIdentity } from "./shuffle.js";
 
 const SECRET_KEYS = ["correctId", "correctIds", "targets", "accepted", "scoring", "tolerance"];
@@ -160,6 +161,40 @@ describe("buildQuestionStart (sanitizer)", () => {
     expect(presentationOrder(single, true, () => 0)?.sort()).toEqual(["a", "b", "c"]);
   });
 });
+
+describe("buildExplanationShow", () => {
+  it("is null for a question without an explanation", () => {
+    expect(buildExplanationShow(at0(), 0, 1)).toBeNull();
+  });
+
+  it("copies the explanation and the prompt only, never the correct answer", () => {
+    const question = { ...at0(), explanation: sampleExplanation() };
+    const event = buildExplanationShow(question, 3, 2);
+    expect(event).toEqual({
+      index: 3,
+      number: 2,
+      prompt: question.prompt,
+      text: sampleExplanation().text,
+      media: { imageId: IMAGE_ID, audioId: EXPLANATION_AUDIO_ID },
+      clip: { start: 5, duration: 12 },
+    });
+    expect(secretsIn(event)).toEqual([]);
+    expect(explanationShowEventSchema.parse(event)).toEqual(event);
+  });
+
+  it("never sends the explanation audio id to players", () => {
+    const event = buildExplanationShow({ ...at0(), explanation: sampleExplanation() }, 0, 1);
+    if (!event) throw new Error("missing explanation");
+    expect(explanationForPlayers(event)).toEqual({ ...event, media: { imageId: IMAGE_ID } });
+    expect(explanationForPlayers(null)).toBeNull();
+  });
+});
+
+function at0(): Question {
+  const question = questions[0];
+  if (!question) throw new Error("fixture");
+  return question;
+}
 
 describe("game state snapshots do not leak secrets", () => {
   it("host and player states during every question", async () => {

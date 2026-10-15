@@ -7,6 +7,7 @@
 | **Quiz** | Uložená šablóna: názov, nastavenia, zoradené otázky |
 | **Question** | Jedna otázka konkrétneho typu (`single`, `multi`, `order`, `hotspot`, `text`, `music`, `number`) |
 | **Page** | Stránka medzi otázkami (nadpis, popis a / alebo obrázok), napr. na oddelenie kategórií. Nie je to otázka: nemá odpovede, body ani časový limit |
+| **Explanation** | Voliteľná vysvetľujúca stránka otázky (text, obrázok alebo video, audio klip). Zobrazí sa hneď po vyhodnotení otázky, ešte pred leaderboardom. Patrí k otázke, nie je to samostatná položka kvízu |
 | **Game** | Jedno spustenie kvízu. Má PIN, hráčov a stav. Pri štarte sa urobí **snapshot kvízu**, takže úpravy kvízu neovplyvnia bežiacu hru |
 | **Host** | Autor a moderátor. Má prístup do editora a ovláda hru |
 | **Player** | Účastník hry. Prihlásenie nepotrebuje, stačí PIN + prezývka |
@@ -69,6 +70,7 @@ QR kód vedie priamo na `/play?pin=…`, takže landing stránku hráč z QR kó
   - text otázky,
   - médium (obrázok alebo video; pri `music` audio, pri `text` navyše voliteľné audio s klipom, pri `hotspot` iba obrázok, pri `number` obrázok alebo video),
   - type-specific editor (pozri Typy otázok).
+- Pod type-specific editorom je prepínač **Pridať vysvetľujúcu stránku** (predvolene vypnutý). Po zapnutí sa zobrazí editor vysvetlenia: text, obrázok alebo video a audio s klipom (pozri [Vysvetlenie](#vysvetlenie-explanation)). Vypnutie pri vyplnenom obsahu vyžaduje potvrdenie. Vysvetlenie zostane pri zmene typu otázky aj pri duplikovaní.
 - Pravý panel nastavuje otázku: časový limit (5–120 s, default 30), body (default 1000, max. 9999), a pri `multi` a `order` aj režim bodovania (`partial` / `all`).
 - Nastavenia kvízu: názov, popis, `speedBonus` (on/off), `showLeaderboardAfterEach` (on/off), `shuffleOptions` (on/off).
 - **Autosave** s debounce 1 s posiela `PUT /api/quizzes/:id` s celým kvízom. Validácia (zdieľaná Zod schéma `quizUpdateRequestSchema`) beží pred uložením a chyby sa zobrazia priamo pri otázke. Kým má kvíz chyby, neukladá sa (stav „Neuložené – oprav chyby“); pri odchode z editora sa uloží okamžite a pri neuložených zmenách sa editor opýta, či naozaj odísť. Pred **Spustiť hru** sa kvíz najprv uloží.
@@ -104,7 +106,12 @@ Zobrazí sa správna odpoveď a štatistika podľa typu:
 - `text` / `music`: **zoskupené unikátne odpovede** (po normalizácii) s počtom a stavom (✓ uznané / ✗ neuznané). Host môže klikom **prepnúť uznanie**, server prepočíta body všetkým hráčom s touto odpoveďou (pozri Manuálne uznanie).
 - `number`: **správne číslo** veľkým písmom s pravidlom (najbližší tip / tolerancia ±X) a pod ním **tipy hráčov zoskupené podľa hodnoty**, od najbližšieho po najvzdialenejší (max. 10 riadkov, zvyšok sa zhrnie): hodnota, o koľko sa líši, počet hráčov a ✓ body / ✗ bez bodov. Host nič neuznáva, výsledok je daný pravidlom.
 
-Akcia **Ďalej** vedie na leaderboard, ďalšiu otázku alebo stránku.
+Akcia **Ďalej** vedie na vysvetlenie (ak ho otázka má), inak na leaderboard, ďalšiu otázku alebo stránku.
+
+### 5a. Vysvetlenie (host screen)
+
+- Iba pri otázke so zapnutou vysvetľujúcou stránkou. Navrchu je štítok „Vysvetlenie · otázka 3“ a text otázky, pod tým text vysvetlenia, obrázok alebo video (spustí sa samo) a `AudioControl` s klipom (spustí sa sám, ak to prehliadač dovolí). Bez odpočtu a bez počítadla odpovedí.
+- Akcia **Ďalej** vedie na leaderboard (ak `showLeaderboardAfterEach`), inak na ďalšiu otázku alebo stránku, resp. na koniec hry.
 
 ### 6. Leaderboard
 
@@ -132,7 +139,7 @@ Akcia **Ďalej** vedie na leaderboard, ďalšiu otázku alebo stránku.
 - 1–20 znakov, unikátna v rámci hry (porovnanie bez rozlíšenia veľkosti písmen a diakritiky).
 - Hráč si zároveň zostaví **avatar**: telo (5 variantov) a hlavu (5 variantov), voliteľne okuliare, klobúk a fúzy (po 3 variantoch, alebo bez). Výber začína s náhodným telom a hlavou bez doplnkov. Avatar sa posiela v `player:join` a po vstupe sa už nemení.
 - Po vstupe sa token uloží do `localStorage` pod kľúčom `nexquiz:{pin}`, aby fungoval reconnect.
-- Prepínač **Zvuk a video na tomto zariadení** (predvolene vypnutý) je pre hráča, ktorý nie je pri obrazovke hosta. Zapnutý prehrá u hráča video otázky, audio klip pri `music` a `text` s audiom (`GET /api/games/:pin/questions/:index/clip`) a zvuky hry (tick posledných 5 s, gong na konci otázky, fanfára na konci hry). Je to iba UI preferencia klienta (`localStorage` `nexquiz:pref:playerMedia`), server o nej nevie a neposiela nič navyše. Zmeniť sa dá aj na čakacích obrazovkách (lobby, medzi otázkami).
+- Prepínač **Zvuk a video na tomto zariadení** (predvolene vypnutý) je pre hráča, ktorý nie je pri obrazovke hosta. Zapnutý prehrá u hráča video otázky, audio klip pri `music` a `text` s audiom, video a audio klip vysvetlenia (`GET /api/games/:pin/questions/:index/clip`) a zvuky hry (tick posledných 5 s, gong na konci otázky, fanfára na konci hry). Je to iba UI preferencia klienta (`localStorage` `nexquiz:pref:playerMedia`), server o nej nevie a neposiela nič navyše. Zmeniť sa dá aj na čakacích obrazovkách (lobby, medzi otázkami).
 
 ### 3. Čakanie
 
@@ -158,6 +165,10 @@ Akcia **Ďalej** vedie na leaderboard, ďalšiu otázku alebo stránku.
 - Pri `number` vlastný tip a správne číslo.
 - Pri `hotspot` obrázok so správnymi oblasťami a vlastným ťukom (z `correct.targets` a `yourAnswer` v `player:result`).
 
+### 5a. Vysvetlenie
+
+- Hráč vidí ten istý text a obrázok ako host (štítok „Vysvetlenie“). So zapnutým zvukom a videom sa u neho prehrá aj video a vystrihnutý audio klip (`GET /api/games/:pin/questions/:index/clip`). Nič neodosiela, ďalej ide hneď, ako host stlačí **Ďalej**. Výsledok otázky (`result`) a skóre ostávajú v stave.
+
 ### 6. Koniec
 
 - Vlastné finálne poradie a skóre, pódium a pod ním tabuľka ďalších miest (od 4. miesta) so zvýrazneným vlastným riadkom. Dáta sú z `game:finished` (`podium` aj celý `ranking` dostávajú všetci).
@@ -176,12 +187,30 @@ type QuestionBase = {
   media?: { imageId?: string; audioId?: string; videoId?: string };
   timeLimit: number;         // sekundy
   points: number;            // max body, default 1000
+  explanation?: Explanation; // voliteľná vysvetľujúca stránka (pozri nižšie)
 };
 ```
 
 `imageId` a `videoId` sa navzájom vylučujú (otázka má obrázok **alebo** video). `videoId` je povolené pri `single`, `multi`, `order`, `text` a `number`; `hotspot` potrebuje statický obrázok a `music` má audio, preto tam `videoId` schéma odmietne. Aj `text` s audiom (pozri `text`) odmietne `videoId`, lebo by sa na obrazovke hosta prehrávali naraz.
 
 Každý scorer vracia `correctness ∈ [0, 1]` (pri `music` súčet váh polí). Výsledné body sa počítajú v sekcii Bodovanie.
+
+### Vysvetlenie (`explanation`)
+
+Voliteľné pole každého typu otázky. Predvolene chýba (prepínač v editore je vypnutý).
+
+```ts
+type Explanation = {
+  text: string;            // max. 1000 znakov, môže byť prázdny
+  media?: { imageId?: string; videoId?: string; audioId?: string };
+  clip?: { start: number; duration: number };   // sekundy; práve vtedy, keď je nastavené `media.audioId`
+};
+```
+
+- Aspoň jedno z `text`, `imageId`, `videoId`, `audioId` musí byť vyplnené (chyba pod kľúčom `explanation.content`).
+- `imageId` a `videoId` sa navzájom vylučujú, `audioId` sa nedá kombinovať s `videoId` (prehrávali by sa naraz). Audio a `clip` sa nastavujú iba spolu, klip má rovnaké limity a prehrávač ako pri `music`.
+- Zobrazuje sa v stave `EXPLANATION` hneď po `REVEAL` otázky, ešte pred leaderboardom. Nemá časovač, odpovede ani body, do skóre, `game_answers` ani CSV nevstupuje.
+- Klientom odchádza až v `explanation:show` (po reveal), **nikdy nie v `question:start`**. Hráči nedostanú `media.audioId`, iba `clip` (rovnako ako pri otázke), hráč so zapnutým zvukom dostane vystrihnutý klip z `/clip`.
 
 ### Stránka (`page`, nie otázka)
 
@@ -458,9 +487,14 @@ stateDiagram-v2
   LOBBY --> QUESTION: host:start (prvý prvok je otázka)
   LOBBY --> PAGE: host:start (prvý prvok je stránka)
   QUESTION --> REVEAL: deadline / všetci odpovedali / host:end_question
+  REVEAL --> EXPLANATION: host:next (ak otázka má vysvetlenie)
   REVEAL --> LEADERBOARD: host:next (ak showLeaderboardAfterEach)
   REVEAL --> QUESTION: host:next (ďalšia otázka)
   REVEAL --> PAGE: host:next (ďalšia je stránka)
+  EXPLANATION --> LEADERBOARD: host:next (ak showLeaderboardAfterEach)
+  EXPLANATION --> QUESTION: host:next (ďalšia otázka)
+  EXPLANATION --> PAGE: host:next (ďalšia je stránka)
+  EXPLANATION --> FINISHED: host:next (posledná otázka) / host:end
   LEADERBOARD --> QUESTION: host:next
   LEADERBOARD --> PAGE: host:next (ďalšia je stránka)
   PAGE --> QUESTION: host:next
@@ -480,7 +514,8 @@ Pravidlá:
 - Neskorý vstup je povolený aj počas hry. Hráč začína s 0 bodmi a zapojí sa od ďalšej otázky (do aktuálnej, ak ešte beží).
 - `host:start` je iba prechod `LOBBY → QUESTION` / `PAGE` (podľa prvého prvku kvízu) a vyžaduje ≥ 1 hráča (inak `INVALID`). Ďalšie prvky sa spúšťajú cez `host:next`.
 - Stav `PAGE` nemá časovač: hra v ňom čaká na `host:next`. Odpoveď v ňom je `LATE`, `host:end_question` je `INVALID_TRANSITION`. Leaderboard po otázke sa zobrazí ešte pred stránkou.
-- `host:end` ukončí hru z ktoréhokoľvek bežiaceho stavu (`LOBBY`, `QUESTION`, `REVEAL`, `LEADERBOARD`, `PAGE`), využíva prechody `* → FINISHED` z diagramu. Neplatný zámer vráti `INVALID_TRANSITION`.
+- Stav `EXPLANATION` ostáva na vyhodnotenej otázke (`currentIndex` sa nemení) a tiež nemá časovač. `host:next` z `REVEAL` doň vedie iba vtedy, keď otázka má `explanation`; bez neho platí pôvodný prechod. Odpoveď v ňom je `LATE`, `host:end_question` je `INVALID_TRANSITION`.
+- `host:end` ukončí hru z ktoréhokoľvek bežiaceho stavu (`LOBBY`, `QUESTION`, `REVEAL`, `EXPLANATION`, `LEADERBOARD`, `PAGE`), využíva prechody `* → FINISHED` z diagramu. Neplatný zámer vráti `INVALID_TRANSITION`.
 - Všetky operácie jednej hry bežia serializovane pod zámkom hry (in-memory, fáza 1), aby sa napr. timer a `host:end_question` nebili.
 
 ### Timery
@@ -530,6 +565,7 @@ Server posiela `serverNow` a `deadline` (epoch ms). Klient si spočíta `offset 
 |---|---|---|
 | `lobby:players` | host + všetci | `{ players: { id, nickname, avatar, connected }[] }` |
 | `page:show` | všetci | `{ index, title, description, media: { imageId? } }`: stránka medzi otázkami (stav `PAGE`) |
+| `explanation:show` | všetci | `{ index, number, prompt, text, media: { imageId?, videoId?, audioId? }, clip? }`: vysvetlenie vyhodnotenej otázky (stav `EXPLANATION`); hráči bez `media.audioId` |
 | `question:start` | všetci | `{ index, total, number, count, type, prompt, media, options?/items? (zamiešané), fields? (bez accepted), clip? (`music`, `text` s audiom), mode?/tolerance? (`number`), timeLimit, deadline, serverNow }` (hráči bez `media.audioId`) |
 | `question:progress` | host | `{ answered, total }` |
 | `question:end` | všetci | `{ index }` |
@@ -544,7 +580,7 @@ Server posiela `serverNow` a `deadline` (epoch ms). Klient si spočíta `offset 
 
 Presné tvary payloadov sú Zod schémy v `packages/shared/src/schemas/ws.ts`. Doplnenia oproti tabuľke vyššie:
 
-- `index` / `total` sú pozícia medzi všetkými prvkami kvízu (otázky aj stránky) a kľúčujú odpovede; na zobrazenie slúži `number` (1-based číslo otázky) a `count` (počet otázok), stránky sa nepočítajú. `GameState` má pri stave `PAGE` vyplnené `page` (a `question = null`).
+- `index` / `total` sú pozícia medzi všetkými prvkami kvízu (otázky aj stránky) a kľúčujú odpovede; na zobrazenie slúži `number` (1-based číslo otázky) a `count` (počet otázok), stránky sa nepočítajú. `GameState` má pri stave `PAGE` vyplnené `page` (a `question = null`), pri stave `EXPLANATION` vyplnené `explanation` (`question` ostáva otázka, ku ktorej patrí; hráč má aj `result`, host `reveal = null`). Mimo týchto stavov sú `page` a `explanation` `null`.
 - `question:start` je discriminated union podľa `type`; `fields` obsahujú iba `{ key, label?, weight }`. Pri `music` a pri `text` s audiom obsahuje aj `clip` (host ho potrebuje na prehranie, nie je to tajomstvo; hráčom slúži ako znamienko „počúvaj“). Server payload pred odoslaním parsuje touto schémou, čím sa odstránia všetky neznáme kľúče (whitelist).
 - `media.audioId` dostáva iba host (`/host`). Hráči (`/play`, `question:start` aj `PlayerGameState.question`) ho nedostanú: nahratý súbor si ponecháva tagy (interpret / názov = správna odpoveď `music` otázky, pri `text` s audiom názov piesne) a celú skladbu (pri doplnení textu aj chýbajúci text za klipom), takže jeho id by cez verejné `GET /media/:id` prezradilo odpoveď pred reveal. Hráč so zapnutým zvukom dostane iba klip vystrihnutý na serveri (`GET /api/games/:pin/questions/:index/clip`). `media.videoId` a `imageId` dostávajú všetci: video sa prehrá iba hráčovi so zapnutým zvukom a videom (ostatní ho nestiahnu), hotspot sa ťuká na mobile.
 - `question:reveal`: `{ index, correct, stats }`, kde `correct` aj `stats` majú `type`. Skupiny textových odpovedí: `{ normalized, examples[], count, accepted, overridden }` (`overridden` = ikona ✋).
@@ -554,7 +590,7 @@ Presné tvary payloadov sú Zod schémy v `packages/shared/src/schemas/ws.ts`. D
 - `avatar` (`avatarSchema` v `shared/schemas/avatar.ts`): `{ body: 0–4, head: 0–4, glasses: 0–2 | null, hat: 0–2 | null, mustache: 0–2 | null }` (indexy variantov, kresby sú iba v klientovi). V `player:join` je nepovinný, chýbajúci = `DEFAULT_AVATAR`; hodnota mimo rozsahu vráti `INVALID`. `PlayerGameState` obsahuje vlastný `avatar`.
 - `game:state` / ack `host:attach` / ack `player:rejoin`: `HostGameState` resp. `PlayerGameState` (pole `role`). `currentIndex` je `-1` v lobby.
 - Acky s chybou majú tvar `{ error: ErrorCode }`, úspešné bez dát `{ ok: true }`.
-- Host acky: `INVALID` (neplatný payload alebo príkaz pred `host:attach`), `PIN_NOT_FOUND`, `INVALID_TRANSITION`. `host:override` je povolený po skončení danej otázky až do `FINISHED`, iba pre `text` / `music`, existujúce pole a `normalized`, ktorý je kľúčom niektorej skupiny odpovedí daného poľa (tak ako ho poslal `question:reveal`). Override poslaný v `REVEAL` aktuálnej otázky pošle hostovi nový `question:reveal`, v `LEADERBOARD` iba nový `leaderboard`.
+- Host acky: `INVALID` (neplatný payload alebo príkaz pred `host:attach`), `PIN_NOT_FOUND`, `INVALID_TRANSITION`. `host:override` je povolený po skončení danej otázky až do `FINISHED`, iba pre `text` / `music`, existujúce pole a `normalized`, ktorý je kľúčom niektorej skupiny odpovedí daného poľa (tak ako ho poslal `question:reveal`). Override poslaný v `REVEAL` aktuálnej otázky pošle hostovi nový `question:reveal`, v `LEADERBOARD` iba nový `leaderboard`, v `EXPLANATION` hostovi nič (dotknutí hráči dostanú `player:result` vždy).
 - `player:join`: po úspešnom acku server pošle hráčovi aj `game:state`, takže neskorý hráč hneď vidí aktuálnu fázu. Prekročenie limitu (per IP + PIN, pozri [Validácia a limity](#validácia-a-limity)) vráti `RATE_LIMITED`, `pin` v payloade sa musí zhodovať s handshake. Token má tvar `{playerId}.{secret}`, server drží iba jeho SHA-256 hash.
 - `player:rejoin` s neplatným alebo vyhodeným tokenom vráti `INVALID_TOKEN`.
 - Jeden socket = jeden hráč: `player:join` na sockete, ktorý už patrí hráčovi, a `player:rejoin` za iného hráča vrátia `INVALID` (inak by prvý hráč ostal `connected` bez socketu a blokoval automatické ukončenie otázky).
@@ -581,7 +617,7 @@ Presné tvary payloadov sú Zod schémy v `packages/shared/src/schemas/ws.ts`. D
 | POST | `/api/games` | `{ quizId }` → `{ pin, gameId }` (snapshot + Redis init) |
 | GET | `/api/games/:pin/qr` | PNG QR kódu s `{base}/play?pin=…` |
 | GET | `/api/games/:pin/exists` | verejné, pre join obrazovku |
-| GET | `/api/games/:pin/questions/:index/clip` | hráč (`Authorization: Bearer {token}`): audio klip bežiacej otázky (`audio/mpeg`) |
+| GET | `/api/games/:pin/questions/:index/clip` | hráč (`Authorization: Bearer {token}`): audio klip bežiacej otázky alebo jej vysvetlenia (`audio/mpeg`) |
 | GET | `/api/games` | história |
 | GET | `/api/games/:id/results` | detail; `?format=csv`. `questions` obsahuje iba otázky (bez stránok), ich `index` je pozícia medzi všetkými prvkami; stĺpce CSV `Q1…Qn` číslujú iba otázky |
 
@@ -591,8 +627,8 @@ Host endpointy (všetky okrem `/exists`, `/media/:id`, hráčskeho `/clip`, logi
 - `/exists` vracia vždy `200 { exists }`, aj pre PIN v zlom formáte (`false`).
 - `POST /api/media`: MIME podľa zoznamu, obrázky sa overia a zmenšia cez `sharp` (formát sa berie z obsahu súboru), audio cez `music-metadata`. Nepodporovaný typ alebo poškodený súbor → `415 UNSUPPORTED_MEDIA_TYPE`, prekročený limit → `413 PAYLOAD_TOO_LARGE`. Video (`video/mp4`, `video/webm`) sa ukladá bez úprav, limit `MAX_VIDEO_MB`. Odpoveď obsahuje navyše `kind`.
 - `GET /media/:id` podporuje `Range` (206), aby sa dalo v audiu a videu pretáčať.
-- `GET /api/games/:pin/questions/:index/clip`: token hráča iba v hlavičke `Authorization: Bearer` (nie v URL, aby nebol v logoch). Neplatný alebo vyhodený hráč → `401 INVALID_TOKEN`, neznámy PIN → `404 PIN_NOT_FOUND`. Klip sa vydá iba v stave `QUESTION` pre `currentIndex` a otázku s audiom, inak `404 NOT_FOUND` (pred štartom otázky sa nedá stiahnuť vopred). Server vystrihne úsek `clip.start … clip.start + clip.duration` cez `ffmpeg`, prekóduje ho do MP3 bez metadát (žiadne tagy, nič za klipom) a výsledok drží v pamäti (16 posledných klipov, súbežné požiadavky zdieľajú jeden beh ffmpeg). `Cache-Control: private, no-store`.
-- `PUT /api/quizzes/:id` overí, že `imageId` / `audioId` / `videoId` odkazujú na existujúce médium správneho druhu (inak `400 INVALID`).
+- `GET /api/games/:pin/questions/:index/clip`: token hráča iba v hlavičke `Authorization: Bearer` (nie v URL, aby nebol v logoch). Neplatný alebo vyhodený hráč → `401 INVALID_TOKEN`, neznámy PIN → `404 PIN_NOT_FOUND`. Klip sa vydá iba v stave `QUESTION` pre `currentIndex` a otázku s audiom, resp. v stave `EXPLANATION` pre `currentIndex` a vysvetlenie s audiom (vtedy klip vysvetlenia, nie otázky), inak `404 NOT_FOUND` (pred štartom otázky ani vysvetlenia sa nedá stiahnuť vopred). Server vystrihne úsek `clip.start … clip.start + clip.duration` cez `ffmpeg`, prekóduje ho do MP3 bez metadát (žiadne tagy, nič za klipom) a výsledok drží v pamäti (16 posledných klipov, súbežné požiadavky zdieľajú jeden beh ffmpeg). `Cache-Control: private, no-store`.
+- `PUT /api/quizzes/:id` overí, že `imageId` / `audioId` / `videoId` (otázky aj jej vysvetlenia) odkazujú na existujúce médium správneho druhu (inak `400 INVALID`).
 - CSV (`?format=csv`): UTF-8 s BOM, stĺpce `rank,nickname,score,Q1…Qn` (body za otázku); bunky začínajúce `= + - @` dostanú prefix `'`.
 
 - DTO sú Zod schémy v `packages/shared/src/schemas/rest.ts`. Chyby majú tvar `{ error: ErrorCode }` (napr. `401 { error: "WRONG_PASSWORD" }` pri logine).
@@ -651,6 +687,7 @@ create table questions (
   time_limit  int  not null default 30 check (time_limit between 5 and 120),
   points      numeric(6,2) not null default 1000,
   data        jsonb not null,           -- validované Zod schémou podľa type; pri `page` `{ "description": "…" }`
+  explanation jsonb,                    -- voliteľné vysvetlenie (`explanationSchema`), pri `page` vždy null
   unique (quiz_id, position) deferrable initially deferred
 );
 
@@ -690,7 +727,7 @@ create table game_answers (
 | Kľúč | Typ | Obsah |
 |---|---|---|
 | `pin:{pin}` | string | `gameId` |
-| `game:{pin}` | hash | `gameId`, `status`, `state` (`LOBBY`, `QUESTION`, …), `currentIndex`, `questionStartedAt`, `deadline` |
+| `game:{pin}` | hash | `gameId`, `status`, `state` (`LOBBY`, `QUESTION`, `REVEAL`, `EXPLANATION`, …), `currentIndex`, `questionStartedAt`, `deadline` |
 | `game:{pin}:quiz` | string | JSON snapshot kvízu (vrátane správnych odpovedí, iba na serveri) |
 | `game:{pin}:shuffle:{idx}` | string | JSON zamiešaného poradia možností/položiek |
 | `game:{pin}:players` | hash | `playerId` → `{ nickname, avatar, tokenHash, connected, joinedAt }` (záznam bez `avatar` sa číta ako `DEFAULT_AVATAR`) |
@@ -740,7 +777,8 @@ Persistencia do Postgresu prebieha po každom `REVEAL` (`game_answers`, priebež
   - `text` / `music` majú v každom poli ≥ 1 alias,
   - `number` má vyplnené správne číslo (konečné, v rozsahu, max. 3 desatinné miesta) a toleranciu ≥ 0, bez audia,
   - pri `music` je audio a súčet váh polí je 1,
-  - `text` s audiom má aj `clip` a nemá video (a naopak `clip` bez audia je neplatný).
+  - `text` s audiom má aj `clip` a nemá video (a naopak `clip` bez audia je neplatný),
+  - zapnuté vysvetlenie má aspoň jedno z textu (max. 1000 znakov), obrázka, videa a audia; obrázok alebo video, nie oboje; audio nie s videom a audio práve s `clip`.
 - Doplnené limity (v `LIMITS` v `shared/schemas/question.ts`): `multi` má 2–6 možností, text otázky max. 300 znakov, text možnosti max. 120, alias max. 100 znakov a max. 50 aliasov na pole, body 0–9999 s max. 2 desatinnými miestami, váha poľa max. 3 desatinné miesta, klip `start` 0–3600 s a `duration` 1–120 s, hotspot max. 10 cieľov, `number` hodnoty v ±10¹² s max. 3 desatinnými miestami, kvíz max. 200 prvkov (otázok a stránok spolu), ID možností `[A-Za-z0-9_-]{1,64}`, ID otázok UUID.
 - `multi` odpoveď musí obsahovať aspoň jednu možnosť a ID sa nesmú opakovať.
 
@@ -749,7 +787,7 @@ Persistencia do Postgresu prebieha po každom `REVEAL` (`game_answers`, priebež
 ## Rozsah MVP
 
 **V MVP:**
-- Všetkých 7 typov otázok, stránky medzi otázkami, editor s autosave, upload obrázkov a audia.
+- Všetkých 7 typov otázok, stránky medzi otázkami, vysvetľujúce stránky otázok, editor s autosave, upload obrázkov a audia.
 - Lobby s PIN a QR kódom, join cez mobil aj PC, reconnect.
 - Vyhodnotenie s fuzzy matchingom a manuálnym uznaním, speed bonus, leaderboard, pódium.
 - História hier, CSV export.

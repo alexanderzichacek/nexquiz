@@ -12,6 +12,7 @@ import { useFullscreen } from "@/lib/useFullscreen";
 import { useAuthStore } from "@/stores/auth";
 import { useConfirmStore } from "@/stores/confirm";
 import { useToastStore } from "@/stores/toast";
+import HostExplanation from "./game/HostExplanation.vue";
 import HostFinished from "./game/HostFinished.vue";
 import HostLeaderboard from "./game/HostLeaderboard.vue";
 import HostLobby from "./game/HostLobby.vue";
@@ -56,11 +57,12 @@ async function run(kind: NonNullable<typeof busy.value>, action: () => Promise<b
 // ---- sounds (host only) ----
 const audio = new StageAudio();
 const lobbyMusic = ref(false);
-// A music question or a text question with an audio clip (e.g. fill in the lyrics).
+// A music question or a text question with an audio clip (e.g. fill in the lyrics), or an explanation with audio.
 const isMusicQuestion = computed(
   () =>
-    (view.value?.state === "QUESTION" || view.value?.state === "REVEAL") &&
-    view.value.question?.media.audioId !== undefined,
+    ((view.value?.state === "QUESTION" || view.value?.state === "REVEAL") &&
+      view.value.question?.media.audioId !== undefined) ||
+    (view.value?.state === "EXPLANATION" && view.value.explanation?.media.audioId !== undefined),
 );
 
 function toggleLobbyMusic(): void {
@@ -256,6 +258,14 @@ const canEnd = computed(() => view.value !== null && view.value.state !== "FINIS
         :advancing="busy === 'next'"
         @next="run('next', game.next)"
         @override="override"
+      />
+
+      <HostExplanation
+        v-else-if="view.state === 'EXPLANATION' && view.explanation"
+        :key="`e${view.explanation.index}`"
+        :explanation="view.explanation"
+        :advancing="busy === 'next'"
+        @next="run('next', game.next)"
       />
 
       <HostLeaderboard

@@ -9,6 +9,7 @@ import { resultKind } from "@/lib/format";
 import { useKeyboardInset } from "@/lib/useKeyboardInset";
 import ConnectionBadge from "./ConnectionBadge.vue";
 import MediaToggle from "./MediaToggle.vue";
+import PlayExplanation from "./PlayExplanation.vue";
 import PlayFinished from "./PlayFinished.vue";
 import PlayNickname from "./PlayNickname.vue";
 import PlayPageContent from "./PlayPageContent.vue";
@@ -147,6 +148,12 @@ const showBadge = computed(() => everConnected.value && !connected.value && phas
           v-else-if="view.state === 'PAGE' && view.page"
           :key="`p${view.page.index}`"
           :page="view.page"
+        />
+
+        <PlayExplanation
+          v-else-if="view.state === 'EXPLANATION' && view.explanation"
+          :key="`e${view.explanation.index}`"
+          :explanation="view.explanation"
         />
 
         <ResultBanner

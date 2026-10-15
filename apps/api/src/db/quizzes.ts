@@ -48,6 +48,7 @@ function toItem(row: QuestionRow): QuizItem {
     timeLimit: row.timeLimit,
     points: Number(row.points),
     data: row.data,
+    ...(row.explanation ? { explanation: row.explanation } : {}),
   });
 }
 
@@ -65,6 +66,7 @@ function toQuestionRow(quizId: string, q: QuizItem, position: number): QuestionI
       timeLimit: PAGE_TIME_LIMIT,
       points: PAGE_POINTS,
       data: { description: q.description },
+      explanation: null,
     };
   }
   return {
@@ -79,6 +81,7 @@ function toQuestionRow(quizId: string, q: QuizItem, position: number): QuestionI
     timeLimit: q.timeLimit,
     points: q.points.toFixed(2),
     data: q.data,
+    explanation: q.explanation ?? null,
   };
 }
 
@@ -217,7 +220,7 @@ export class QuizRepository implements QuizSource {
     };
   }
 
-  /** Every `imageId` / `audioId` / `videoId` must be an uploaded file of that kind. */
+  /** Every `imageId` / `audioId` / `videoId` (of a question and of its explanation) must be an uploaded file of that kind. */
   private async assertMediaRefs(qs: readonly QuizItem[]): Promise<void> {
     const wanted = new Map<string, "image" | "audio" | "video">();
     const want = (id: string | undefined, kind: "image" | "audio" | "video"): void => {
@@ -231,6 +234,9 @@ export class QuizRepository implements QuizSource {
       if (!isPage(q)) {
         want(q.media?.audioId, "audio");
         want(q.media?.videoId, "video");
+        want(q.explanation?.media?.imageId, "image");
+        want(q.explanation?.media?.audioId, "audio");
+        want(q.explanation?.media?.videoId, "video");
       }
     }
     if (wanted.size === 0) return;

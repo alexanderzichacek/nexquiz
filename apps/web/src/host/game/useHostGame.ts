@@ -3,6 +3,7 @@ import { onBeforeUnmount, ref, shallowRef } from "vue";
 import { ACK_TIMEOUT_MS, connectHost, type HostClientSocket } from "@/lib/socket";
 import {
   fromHostState,
+  onExplanationShow,
   onFinished,
   onLeaderboard,
   onLobbyPlayers,
@@ -88,6 +89,7 @@ export function useHostGame(pin: string) {
     apply((v) => onQuestionStart(v, e, localNow));
   });
   socket.on("page:show", (e) => apply((v) => onPageShow(v, e)));
+  socket.on("explanation:show", (e) => apply((v) => onExplanationShow(v, e)));
   socket.on("question:progress", (e) => apply((v) => onProgress(v, e)));
   socket.on("question:end", (e) => apply((v) => onQuestionEnd(v, e)));
   socket.on("question:reveal", (e) => apply((v) => onReveal(v, e)));

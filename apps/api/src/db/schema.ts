@@ -72,6 +72,8 @@ export const questions = pgTable(
     points: numeric("points", { precision: 6, scale: 2 }).notNull().default("1000"),
     /** Validated by the Zod schema for `type`; `{ description }` for a `page`. */
     data: jsonb("data").$type<unknown>().notNull(),
+    /** Optional explanation screen after the reveal (`explanationSchema`); always null for a `page`. */
+    explanation: jsonb("explanation").$type<unknown>(),
   },
   (t) => [
     check("questions_type_check", sql`${t.type} in ('single','multi','order','hotspot','text','music','number','page')`),

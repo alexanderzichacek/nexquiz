@@ -11,6 +11,7 @@ import { clearToken, loadToken, saveToken } from "@/lib/playerToken";
 import { ACK_TIMEOUT_MS, connectPlay, type PlayClientSocket } from "@/lib/socket";
 import {
   fromPlayerState,
+  onExplanationShow,
   onFinished,
   onLeaderboard,
   onPageShow,
@@ -134,6 +135,7 @@ export function usePlayGame(pin: string) {
       apply((v) => onQuestionStart(v, e, localNow));
     });
     s.on("page:show", (e) => apply((v) => onPageShow(v, e)));
+    s.on("explanation:show", (e) => apply((v) => onExplanationShow(v, e)));
     s.on("question:end", (e) => apply((v) => onQuestionEnd(v, e)));
     s.on("player:result", (e) => apply((v) => onPlayerResult(v, e)));
     s.on("leaderboard", (e) => apply((v) => onLeaderboard(v, e)));

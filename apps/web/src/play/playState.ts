@@ -1,5 +1,6 @@
 import type {
   Avatar,
+  ExplanationShowEvent,
   GameFinishedEvent,
   GameStateName,
   LeaderboardEvent,
@@ -25,6 +26,7 @@ export interface PlayView {
   total: number;
   question: QuestionStartEvent | null;
   page: PageShowEvent | null;
+  explanation: ExplanationShowEvent | null;
   hasAnswered: boolean;
   result: PlayerResultEvent | null;
   score: number;
@@ -46,6 +48,7 @@ export function fromPlayerState(s: PlayerGameState, localNow: number = Date.now(
     total: s.total,
     question: s.question,
     page: s.page,
+    explanation: s.explanation,
     hasAnswered: s.hasAnswered,
     result: s.result,
     score: s.score,
@@ -64,6 +67,7 @@ export function onQuestionStart(v: PlayView, e: QuestionStartEvent, localNow: nu
     total: e.total,
     question: e,
     page: null,
+    explanation: null,
     hasAnswered: false,
     result: null,
     leaderboard: null,
@@ -73,7 +77,22 @@ export function onQuestionStart(v: PlayView, e: QuestionStartEvent, localNow: nu
 
 /** `page:show` – a page between questions. */
 export function onPageShow(v: PlayView, e: PageShowEvent): PlayView {
-  return { ...v, state: "PAGE", currentIndex: e.index, question: null, page: e, hasAnswered: false, result: null, leaderboard: null };
+  return {
+    ...v,
+    state: "PAGE",
+    currentIndex: e.index,
+    question: null,
+    page: e,
+    explanation: null,
+    hasAnswered: false,
+    result: null,
+    leaderboard: null,
+  };
+}
+
+/** `explanation:show` – the explanation of the revealed question; the result of the question stays. */
+export function onExplanationShow(v: PlayView, e: ExplanationShowEvent): PlayView {
+  return { ...v, state: "EXPLANATION", currentIndex: e.index, explanation: e, leaderboard: null };
 }
 
 export function onQuestionEnd(v: PlayView, e: QuestionEndEvent): PlayView {
@@ -108,6 +127,7 @@ export function onFinished(v: PlayView, e: GameFinishedEvent): PlayView {
     state: "FINISHED",
     question: null,
     page: null,
+    explanation: null,
     finished: e,
     ...(own ? { score: own.score, rank: own.rank } : {}),
   };

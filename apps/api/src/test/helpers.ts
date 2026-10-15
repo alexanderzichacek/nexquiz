@@ -1,4 +1,4 @@
-import type { Page, Question, Quiz, QuizSettings, QuizSnapshot } from "@nexquiz/shared";
+import type { Explanation, Page, Question, Quiz, QuizSettings, QuizSnapshot } from "@nexquiz/shared";
 import type { AppServices } from "../app.js";
 import { GameService } from "../game/GameService.js";
 import type { GameLogger, GameNotifier, GamePersistence, PersistedAnswer, PersistedPlayer } from "../game/ports.js";
@@ -8,6 +8,16 @@ import { MemoryGameStore } from "../store/memoryGameStore.js";
 export const IMAGE_ID = "11111111-1111-4111-8111-111111111111";
 export const AUDIO_ID = "22222222-2222-4222-8222-222222222222";
 export const QUIZ_ID = "33333333-3333-4333-8333-333333333333";
+export const EXPLANATION_AUDIO_ID = "44444444-4444-4444-8444-444444444444";
+
+/** An explanation with a text, an image and an audio clip. */
+export function sampleExplanation(): Explanation {
+  return {
+    text: "Bratislava has been the capital since 1993.",
+    media: { imageId: IMAGE_ID, audioId: EXPLANATION_AUDIO_ID },
+    clip: { start: 5, duration: 12 },
+  };
+}
 
 export const Q = {
   single: "aaaaaaaa-0000-4000-8000-000000000001",
@@ -145,7 +155,7 @@ export function sampleQuiz(settings: Partial<QuizSettings> = {}): SampleQuiz {
 }
 
 export type RecordedEvent =
-  | { kind: "lobbyPlayers" | "questionStart" | "questionStartPlayers" | "pageShow" | "questionProgress" | "questionEnd" | "questionReveal" | "leaderboard" | "gameFinished"; pin: string; payload: unknown }
+  | { kind: "lobbyPlayers" | "questionStart" | "questionStartPlayers" | "pageShow" | "explanationShow" | "explanationShowPlayers" | "questionProgress" | "questionEnd" | "questionReveal" | "leaderboard" | "gameFinished"; pin: string; payload: unknown }
   | { kind: "playerResult"; pin: string; playerId: string; payload: unknown }
   | { kind: "playerKicked"; pin: string; playerId: string; payload: null };
 
@@ -163,6 +173,11 @@ export class RecordingNotifier implements GameNotifier {
   }
   pageShow(pin: string, payload: unknown): void {
     this.events.push({ kind: "pageShow", pin, payload });
+  }
+  /** Recorded as `explanationShow` (host variant) + `explanationShowPlayers` (player variant). */
+  explanationShow(pin: string, payload: { host: unknown; players: unknown }): void {
+    this.events.push({ kind: "explanationShow", pin, payload: payload.host });
+    this.events.push({ kind: "explanationShowPlayers", pin, payload: payload.players });
   }
   questionProgress(pin: string, payload: unknown): void {
     this.events.push({ kind: "questionProgress", pin, payload });

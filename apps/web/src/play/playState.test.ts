@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   finalPlacement,
   fromPlayerState,
+  onExplanationShow,
   onFinished,
   onLeaderboard,
   onPageShow,
@@ -28,6 +29,7 @@ function state(): PlayerGameState {
     serverNow: 5_000,
     question: null,
     page: null,
+    explanation: null,
     leaderboard: null,
     finished: null,
     score: 0,
@@ -111,6 +113,17 @@ describe("playState", () => {
     expect(v).toMatchObject({ state: "PAGE", currentIndex: 1, question: null, result: null, hasAnswered: false, score: 1 });
     expect(v.page?.title).toBe("Šport");
     expect(onQuestionStart(v, { ...q0, index: 2 }).page).toBeNull();
+  });
+
+  it("shows the explanation after the reveal and keeps the result of the question", () => {
+    let v = onQuestionStart(fromPlayerState(state()), q0);
+    v = onPlayerResult(onQuestionEnd(v, { index: 0 }), result(0, 1, 1, 1));
+    const explanation = { index: 0, number: 1, prompt: q0.prompt, text: "Gerlach má 2655 m.", media: {} };
+    v = onExplanationShow(v, explanation);
+    expect(v).toMatchObject({ state: "EXPLANATION", currentIndex: 0, explanation, result: { index: 0 }, score: 1 });
+    // An override during the explanation updates the result of the explained question.
+    expect(onPlayerResult(v, result(0, 0, 0, 2))).toMatchObject({ state: "EXPLANATION", result: { points: 0 }, rank: 2 });
+    expect(onQuestionStart(v, { ...q0, index: 1 }).explanation).toBeNull();
   });
 
   it("takes score and rank from the leaderboard and the final ranking", () => {

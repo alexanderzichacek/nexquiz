@@ -1,6 +1,13 @@
 import { QUESTION_TYPES, questionSchema, type Question } from "@nexquiz/shared";
 import { describe, expect, it } from "vitest";
-import { changeQuestionType, createQuestion, duplicateQuestion, hasTypeSpecificContent } from "./defaults";
+import {
+  changeQuestionType,
+  createExplanation,
+  createQuestion,
+  duplicateQuestion,
+  hasExplanationContent,
+  hasTypeSpecificContent,
+} from "./defaults";
 
 const IMAGE_ID = "11111111-1111-4111-8111-111111111111";
 const AUDIO_ID = "22222222-2222-4222-8222-222222222222";
@@ -64,6 +71,13 @@ describe("changeQuestionType", () => {
     });
   });
 
+  it("keeps the explanation", () => {
+    const single = createQuestion("single");
+    single.explanation = { text: "Pretože.", media: { imageId: IMAGE_ID } };
+    expect(changeQuestionType(single, "number").explanation).toEqual({ text: "Pretože.", media: { imageId: IMAGE_ID } });
+    expect(createQuestion("single").explanation).toBeUndefined();
+  });
+
   it("drops media the new type cannot use", () => {
     const music = createQuestion("music");
     music.media = { audioId: AUDIO_ID };
@@ -81,6 +95,16 @@ describe("changeQuestionType", () => {
     expect(text.type === "text" && text.data.clip).toEqual({ start: 0, duration: 15 });
     // ...and back: a text question with audio keeps it as a music question.
     expect(changeQuestionType(text, "music").media).toEqual({ audioId: AUDIO_ID });
+  });
+});
+
+describe("hasExplanationContent", () => {
+  it("is false without an explanation or for an empty one, true once something was entered", () => {
+    expect(hasExplanationContent(undefined)).toBe(false);
+    expect(hasExplanationContent(createExplanation())).toBe(false);
+    expect(hasExplanationContent({ text: "  " })).toBe(false);
+    expect(hasExplanationContent({ text: "Pretože." })).toBe(true);
+    expect(hasExplanationContent({ text: "", media: { audioId: AUDIO_ID }, clip: { start: 0, duration: 15 } })).toBe(true);
   });
 });
 

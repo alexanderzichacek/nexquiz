@@ -1,7 +1,10 @@
 import {
+  explanationShowEventSchema,
   pageShowEventSchema,
   questionStartEventSchema,
   type CorrectAnswer,
+  type ExplanationMedia,
+  type ExplanationShowEvent,
   type MediaRef,
   type Option,
   type Page,
@@ -137,6 +140,41 @@ export function buildPageShow(page: Page, index: number): PageShowEvent {
     description: page.description,
     media: page.media?.imageId === undefined ? {} : { imageId: page.media.imageId },
   });
+}
+
+/**
+ * `explanation:show` for the host (with `media.audioId`), or null when the
+ * question has no explanation. Sent only after the question was revealed.
+ */
+export function buildExplanationShow(question: Question, index: number, number: number): ExplanationShowEvent | null {
+  const { explanation } = question;
+  if (!explanation) return null;
+  const media: ExplanationMedia = {};
+  if (explanation.media?.imageId !== undefined) media.imageId = explanation.media.imageId;
+  if (explanation.media?.videoId !== undefined) media.videoId = explanation.media.videoId;
+  if (explanation.media?.audioId !== undefined) media.audioId = explanation.media.audioId;
+  return explanationShowEventSchema.parse({
+    index,
+    number,
+    prompt: question.prompt,
+    text: explanation.text,
+    media,
+    ...(explanation.clip ? { clip: { start: explanation.clip.start, duration: explanation.clip.duration } } : {}),
+  });
+}
+
+/**
+ * Player variant of `explanation:show`: drops `media.audioId` like
+ * `forPlayers`, a player with sound on gets only the cut clip.
+ */
+export function explanationForPlayers(event: ExplanationShowEvent): ExplanationShowEvent;
+export function explanationForPlayers(event: ExplanationShowEvent | null): ExplanationShowEvent | null;
+export function explanationForPlayers(event: ExplanationShowEvent | null): ExplanationShowEvent | null {
+  if (!event) return null;
+  const media: ExplanationMedia = {};
+  if (event.media.imageId !== undefined) media.imageId = event.media.imageId;
+  if (event.media.videoId !== undefined) media.videoId = event.media.videoId;
+  return { ...event, media };
 }
 
 /** Correct answer of a question – sent only after the question ended. */

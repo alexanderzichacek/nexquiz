@@ -1,6 +1,7 @@
 import {
   ANSWER_GRACE_MS,
   DEFAULT_AVATAR,
+  explanationShowEventSchema,
   GAME_STATES,
   leaderboardEventSchema,
   normalize,
@@ -17,9 +18,12 @@ import { AppError } from "../errors.js";
 import {
   AUDIO_ID,
   createHarness,
+  EXPLANATION_AUDIO_ID,
+  IMAGE_ID,
   numberQuestion,
   PAGE_ID,
   Q,
+  sampleExplanation,
   sampleQuiz,
   samplePage,
   type Harness,
@@ -70,10 +74,15 @@ describe("state machine table", () => {
         "LOBBY→FINISHED",
         "QUESTION→REVEAL",
         "QUESTION→FINISHED",
+        "REVEAL→EXPLANATION",
         "REVEAL→LEADERBOARD",
         "REVEAL→QUESTION",
         "REVEAL→PAGE",
         "REVEAL→FINISHED",
+        "EXPLANATION→LEADERBOARD",
+        "EXPLANATION→QUESTION",
+        "EXPLANATION→PAGE",
+        "EXPLANATION→FINISHED",
         "LEADERBOARD→QUESTION",
         "LEADERBOARD→PAGE",
         "LEADERBOARD→FINISHED",
@@ -380,6 +389,152 @@ describe("pages between questions", () => {
   it("refuses a quiz that has pages only", async () => {
     const h = createHarness({}, { ...sampleQuiz(), questions: [samplePage()] });
     await expectCode(h.games.createGame(h.quiz.id), "INVALID");
+  });
+});
+
+/** `quiz` limited to the questions at `indexes`, with an explanation on those in `explained` (indexes into the result). */
+function explainedQuiz(settings: Partial<QuizSettings>, indexes: number[], explained: number[]): SampleQuiz {
+  const quiz = sampleQuiz(settings);
+  const questions = indexes.map((i) => at(quiz.questions, i));
+  return {
+    ...quiz,
+    questions: questions.map((q, i) => (explained.includes(i) ? { ...q, explanation: sampleExplanation() } : q)),
+  };
+}
+
+describe("explanations", () => {
+  it("shows the explanation right after the reveal, before the leaderboard", async () => {
+    // single (explained), multi (no explanation)
+    const h = createHarness({}, explainedQuiz({}, [0, 1], [0]));
+    const { pin, players } = await setup(h);
+    const alice = at(players, 0);
+    await h.games.start(pin);
+    // Nothing of the explanation goes out with the question.
+    expect(JSON.stringify(h.notifier.last("questionStart")?.payload)).not.toContain("explanation");
+    expect(JSON.stringify(h.notifier.last("questionStartPlayers")?.payload)).not.toContain(sampleExplanation().text);
+
+    await h.games.submitAnswer(pin, alice.playerId, 0, { optionId: "b" }, h.clock.t + 1);
+    await h.games.endQuestion(pin);
+    expect(await state(h, pin)).toBe("REVEAL");
+    expect(h.notifier.of("explanationShow")).toHaveLength(0);
+
+    await h.games.next(pin);
+    expect(await state(h, pin)).toBe("EXPLANATION");
+    const hostEvent = explanationShowEventSchema.parse(h.notifier.last("explanationShow")?.payload);
+    expect(hostEvent).toEqual({
+      index: 0,
+      number: 1,
+      prompt: "2 + 2?",
+      text: "Bratislava has been the capital since 1993.",
+      media: { imageId: IMAGE_ID, audioId: EXPLANATION_AUDIO_ID },
+      clip: { start: 5, duration: 12 },
+    });
+    // Players learn there is a clip to listen to, never the audio id.
+    const playerEvent = explanationShowEventSchema.parse(h.notifier.last("explanationShowPlayers")?.payload);
+    expect(playerEvent).toEqual({ ...hostEvent, media: { imageId: IMAGE_ID } });
+    expect(h.scheduler.timers.has(pin)).toBe(false);
+
+    // Reconnect snapshots carry the explanation; the player keeps the result and score.
+    const host = await h.games.attachHost(pin);
+    expect(host).toMatchObject({ state: "EXPLANATION", currentIndex: 0, explanation: hostEvent, reveal: null, leaderboard: null });
+    const player = await h.games.getPlayerState(pin, alice.playerId);
+    expect(player).toMatchObject({ state: "EXPLANATION", explanation: playerEvent, result: { index: 0, correctness: 1 } });
+    expect(player.score).toBeGreaterThan(0);
+
+    await h.games.next(pin);
+    expect(await state(h, pin)).toBe("LEADERBOARD");
+    await h.games.next(pin);
+    expect(await state(h, pin)).toBe("QUESTION");
+    expect((await h.games.attachHost(pin)).explanation).toBeNull();
+
+    // A question without an explanation goes straight to the leaderboard.
+    await h.games.endQuestion(pin);
+    await h.games.next(pin);
+    expect(await state(h, pin)).toBe("LEADERBOARD");
+    expect(h.notifier.of("explanationShow")).toHaveLength(1);
+  });
+
+  it("goes from the explanation to the next item, or to the end, when the leaderboard is off", async () => {
+    // single, multi (explained)
+    const h = createHarness({ showLeaderboardAfterEach: false }, explainedQuiz({ showLeaderboardAfterEach: false }, [0, 1], [1]));
+    const { pin } = await setup(h);
+    await h.games.start(pin);
+    await h.games.endQuestion(pin);
+    await h.games.next(pin);
+    expect(await state(h, pin)).toBe("QUESTION");
+    await h.games.endQuestion(pin);
+    await h.games.next(pin);
+    expect(await state(h, pin)).toBe("EXPLANATION");
+    await h.games.next(pin);
+    expect(await state(h, pin)).toBe("FINISHED");
+  });
+
+  it("accepts no answer, end_question or start in the explanation, but host:end", async () => {
+    const h = createHarness({}, explainedQuiz({}, [0, 1], [0]));
+    const { pin, players } = await setup(h);
+    await h.games.start(pin);
+    await h.games.endQuestion(pin);
+    await h.games.next(pin);
+    expect(await state(h, pin)).toBe("EXPLANATION");
+
+    expect(await h.games.submitAnswer(pin, at(players, 0).playerId, 0, { optionId: "b" }, h.clock.t)).toEqual({ error: "LATE" });
+    await expectCode(h.games.endQuestion(pin), "INVALID_TRANSITION");
+    await expectCode(h.games.start(pin), "INVALID_TRANSITION");
+    await h.games.end(pin);
+    expect(await state(h, pin)).toBe("FINISHED");
+  });
+
+  it("gives players the explanation clip in the explanation and the question clip in the question", async () => {
+    // music (explained)
+    const h = createHarness({}, explainedQuiz({}, [5], [0]));
+    const { pin, players } = await setup(h);
+    const token = at(players, 0).token;
+    await h.games.start(pin);
+    await expect(h.games.playerClip(pin, token, 0)).resolves.toEqual({ audioId: AUDIO_ID, clip: { start: 10, duration: 20 } });
+    await h.games.endQuestion(pin);
+    await expectCode(h.games.playerClip(pin, token, 0), "NOT_FOUND");
+    await h.games.next(pin);
+    await expect(h.games.playerClip(pin, token, 0)).resolves.toEqual({
+      audioId: EXPLANATION_AUDIO_ID,
+      clip: { start: 5, duration: 12 },
+    });
+    await h.games.next(pin);
+    await expectCode(h.games.playerClip(pin, token, 0), "NOT_FOUND");
+  });
+
+  it("refuses the clip in an explanation without audio", async () => {
+    const quiz = explainedQuiz({}, [0], []);
+    const single = at(quiz.questions, 0);
+    const h = createHarness({}, { ...quiz, questions: [{ ...single, explanation: { text: "Because 2 + 2 = 4." } }] });
+    const { pin, players } = await setup(h);
+    await h.games.start(pin);
+    await h.games.endQuestion(pin);
+    await h.games.next(pin);
+    expect(await state(h, pin)).toBe("EXPLANATION");
+    expect(explanationShowEventSchema.parse(h.notifier.last("explanationShow")?.payload)).toMatchObject({
+      text: "Because 2 + 2 = 4.",
+      media: {},
+    });
+    await expectCode(h.games.playerClip(pin, at(players, 0).token, 0), "NOT_FOUND");
+  });
+
+  it("re-sends player results after an override in the explanation, without a reveal or leaderboard", async () => {
+    // text (explained)
+    const h = createHarness({ speedBonus: false }, explainedQuiz({ speedBonus: false }, [4], [0]));
+    const { pin, players } = await setup(h, ["Alice"]);
+    const alice = at(players, 0);
+    await h.games.start(pin);
+    await h.games.submitAnswer(pin, alice.playerId, 0, { answers: { answer: "Pressburg" } }, h.clock.t + 1);
+    await h.settle(pin);
+    await h.games.next(pin);
+    expect(await state(h, pin)).toBe("EXPLANATION");
+
+    h.notifier.clear();
+    await h.games.override(pin, { questionIndex: 0, fieldKey: "answer", normalized: "pressburg", accept: true });
+    expect(playerResultEventSchema.parse(h.notifier.last("playerResult")?.payload)).toMatchObject({ index: 0, correctness: 1 });
+    expect(h.notifier.of("questionReveal")).toEqual([]);
+    expect(h.notifier.of("leaderboard")).toEqual([]);
+    expect(await state(h, pin)).toBe("EXPLANATION");
   });
 });
 

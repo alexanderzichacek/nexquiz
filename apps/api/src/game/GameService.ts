@@ -16,6 +16,7 @@ import {
   type Avatar,
   type Clip,
   type CreateGameResponse,
+  type ExplanationShowEvent,
   type GameStateName,
   type HostGameState,
   type HostOverridePayload,
@@ -44,7 +45,14 @@ import {
 import { KeyedMutex } from "./mutex.js";
 import type { GameLogger, GameNotifier, GamePersistence, PersistedAnswer, QuizSource } from "./ports.js";
 import { buildReveal } from "./reveal.js";
-import { buildCorrectAnswer, buildPageShow, buildQuestionStart, forPlayers } from "./sanitize.js";
+import {
+  buildCorrectAnswer,
+  buildExplanationShow,
+  buildPageShow,
+  buildQuestionStart,
+  explanationForPlayers,
+  forPlayers,
+} from "./sanitize.js";
 import type { Scheduler } from "./scheduler.js";
 import { imageAspectOf, scoreQuestion, type ScoredAnswer } from "./scoring.js";
 import { cryptoRandomInt, presentationOrder, type RandomInt } from "./shuffle.js";
@@ -206,11 +214,13 @@ export class GameService {
     });
   }
 
-  /** `host:next`: REVEAL / LEADERBOARD / PAGE → LEADERBOARD / QUESTION / PAGE / FINISHED. */
+  /** `host:next`: REVEAL / EXPLANATION / LEADERBOARD / PAGE → EXPLANATION / LEADERBOARD / QUESTION / PAGE / FINISHED. */
   next(pin: string): Promise<void> {
     return this.locked(pin, async (ctx) => {
       let to: GameStateName;
-      if (ctx.meta.state === "REVEAL") {
+      if (ctx.meta.state === "REVEAL" && this.questionAt(ctx, ctx.meta.currentIndex).explanation) {
+        to = "EXPLANATION";
+      } else if (ctx.meta.state === "REVEAL" || ctx.meta.state === "EXPLANATION") {
         to = ctx.snapshot.settings.showLeaderboardAfterEach ? "LEADERBOARD" : this.stateOfNextItem(ctx);
       } else if (ctx.meta.state === "LEADERBOARD" || ctx.meta.state === "PAGE") {
         to = this.stateOfNextItem(ctx);
@@ -275,7 +285,7 @@ export class GameService {
         const standing = standings.find((s) => s.playerId === playerId);
         if (standing) this.deps.notifier.playerResult(pin, playerId, this.playerResult(question, idx, entry, standing));
       }
-      // Only while the reveal is on screen; in LEADERBOARD the host gets `leaderboard` only.
+      // Only while the reveal is on screen; in LEADERBOARD the host gets `leaderboard` only (in EXPLANATION nothing).
       if (idx === meta.currentIndex && meta.state === "REVEAL") {
         this.deps.notifier.questionReveal(pin, buildReveal(question, idx, results, overrides));
       }
@@ -360,10 +370,11 @@ export class GameService {
   }
 
   /**
-   * Audio clip of the running question for a player who plays sound on their
-   * own device. Only with a valid player token, only in `QUESTION` and only
-   * for the current question with audio – the clip never leaves the server
-   * earlier than the host screen plays it. Read only, no lock needed.
+   * Audio clip of the running question (or of its explanation) for a player
+   * who plays sound on their own device. Only with a valid player token, only
+   * in `QUESTION` / `EXPLANATION` and only for the current question with audio
+   * – the clip never leaves the server earlier than the host screen plays it.
+   * Read only, no lock needed.
    */
   async playerClip(pin: string, token: string, index: number): Promise<{ audioId: string; clip: Clip }> {
     const ctx = await this.tryLoadContext(pin);
@@ -372,10 +383,19 @@ export class GameService {
     const player = playerId === null ? null : await this.deps.store.getPlayer(pin, playerId);
     if (!player || !tokenMatches(token, player.tokenHash)) throw new AppError("INVALID_TOKEN");
     const { meta } = ctx;
-    if (meta.state !== "QUESTION" || meta.currentIndex !== index) throw new AppError("NOT_FOUND");
+    if ((meta.state !== "QUESTION" && meta.state !== "EXPLANATION") || meta.currentIndex !== index) {
+      throw new AppError("NOT_FOUND");
+    }
     const question = this.questionAt(ctx, index);
-    const audioId = question.media?.audioId;
-    const clip = question.type === "music" || question.type === "text" ? question.data.clip : undefined;
+    let audioId: string | undefined;
+    let clip: Clip | undefined;
+    if (meta.state === "EXPLANATION") {
+      audioId = question.explanation?.media?.audioId;
+      clip = question.explanation?.clip;
+    } else {
+      audioId = question.media?.audioId;
+      clip = question.type === "music" || question.type === "text" ? question.data.clip : undefined;
+    }
     if (audioId === undefined || clip === undefined) throw new AppError("NOT_FOUND");
     return { audioId, clip: { start: clip.start, duration: clip.duration } };
   }
@@ -452,6 +472,10 @@ export class GameService {
       const item = ctx.snapshot.questions[ctx.meta.currentIndex + 1];
       if (!item || isPage(item) !== (to === "PAGE")) throw new AppError("INVALID_TRANSITION");
     }
+    // EXPLANATION stays on the revealed question, which has to have one.
+    if (to === "EXPLANATION" && !this.questionAt(ctx, ctx.meta.currentIndex).explanation) {
+      throw new AppError("INVALID_TRANSITION");
+    }
     this.deps.log.info({ pin: ctx.pin, gameId: ctx.meta.gameId, from, to, index: ctx.meta.currentIndex }, "game transition");
     switch (to) {
       case "QUESTION":
@@ -460,6 +484,8 @@ export class GameService {
         return this.enterReveal(ctx);
       case "PAGE":
         return this.enterPage(ctx);
+      case "EXPLANATION":
+        return this.enterExplanation(ctx);
       case "LEADERBOARD":
         return this.enterLeaderboard(ctx);
       case "FINISHED":
@@ -544,6 +570,13 @@ export class GameService {
       );
     }
     await this.persistProgress(ctx, index, standings, current, results);
+  }
+
+  /** Explanation of the revealed question: no timer, no scoring; the host moves on with `host:next`. */
+  private async enterExplanation(ctx: GameContext): Promise<void> {
+    await this.updateMeta(ctx, { state: "EXPLANATION" });
+    const event = this.currentExplanation(ctx);
+    if (event) this.deps.notifier.explanationShow(ctx.pin, { host: event, players: explanationForPlayers(event) });
   }
 
   private async enterLeaderboard(ctx: GameContext): Promise<void> {
@@ -795,6 +828,14 @@ export class GameService {
     return meta.state === "PAGE" ? buildPageShow(this.pageAt(ctx, meta.currentIndex), meta.currentIndex) : null;
   }
 
+  /** Explanation on screen as sent in `explanation:show` (host variant), or null outside the `EXPLANATION` state. */
+  private currentExplanation(ctx: GameContext): ExplanationShowEvent | null {
+    const { meta } = ctx;
+    if (meta.state !== "EXPLANATION") return null;
+    const question = this.questionAt(ctx, meta.currentIndex);
+    return buildExplanationShow(question, meta.currentIndex, questionNumber(ctx.snapshot.questions, meta.currentIndex));
+  }
+
   /** Scores of the current question recomputed from stored answers + results (deterministic). */
   private async scoredCurrent(ctx: GameContext, players: ReadonlyMap<string, PlayerRecord>): Promise<{
     question: Question;
@@ -841,6 +882,7 @@ export class GameService {
       players: lobbyList(players),
       question: await this.currentQuestion(ctx),
       page: this.currentPage(ctx),
+      explanation: this.currentExplanation(ctx),
       progress: meta.state === "QUESTION" ? await this.progress(ctx) : null,
       reveal,
       leaderboard: meta.state === "LEADERBOARD" ? this.leaderboardOf(ctx, standings) : null,
@@ -859,7 +901,7 @@ export class GameService {
 
     const answers = meta.currentIndex >= 0 ? await this.deps.store.getAnswers(ctx.pin, meta.currentIndex) : new Map();
     let result: PlayerResultEvent | null = null;
-    if (meta.state === "REVEAL" || meta.state === "LEADERBOARD") {
+    if (meta.state === "REVEAL" || meta.state === "EXPLANATION" || meta.state === "LEADERBOARD") {
       const { question, results } = await this.scoredCurrent(ctx, players);
       result = this.playerResult(question, meta.currentIndex, results.get(playerId), standing);
     }
@@ -875,6 +917,7 @@ export class GameService {
       serverNow: this.now(),
       question: forPlayers(await this.currentQuestion(ctx)),
       page: this.currentPage(ctx),
+      explanation: explanationForPlayers(this.currentExplanation(ctx)),
       leaderboard: meta.state === "LEADERBOARD" ? this.leaderboardOf(ctx, standings) : null,
       finished: meta.state === "FINISHED" ? buildFinished(standings) : null,
       score: fromHundredths(standing.scoreHundredths),

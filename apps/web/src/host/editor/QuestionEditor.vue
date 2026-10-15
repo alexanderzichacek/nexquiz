@@ -6,7 +6,8 @@ import { format, sk } from "@/i18n/sk";
 import { mediaUrl } from "@/lib/forms";
 import { useConfirmStore } from "@/stores/confirm";
 import ChoiceEditor from "./ChoiceEditor.vue";
-import { hasTypeSpecificContent, mediaKindsFor } from "./defaults";
+import { createExplanation, hasExplanationContent, hasTypeSpecificContent, mediaKindsFor } from "./defaults";
+import ExplanationEditor from "./ExplanationEditor.vue";
 import FieldError from "./FieldError.vue";
 import HotspotEditor from "./HotspotEditor.vue";
 import MediaUpload from "./MediaUpload.vue";
@@ -18,7 +19,7 @@ import SaveStatus from "./SaveStatus.vue";
 import { useQuizEditorStore } from "./store";
 import TextEditor from "./TextEditor.vue";
 
-/** Center panel: type, prompt, media and the type-specific editor of the selected question. */
+/** Center panel: type, prompt, media, the type-specific editor and the optional explanation of the selected question. */
 const question = defineModel<Question>({ required: true });
 const props = defineProps<{ index: number; total: number }>();
 
@@ -79,6 +80,29 @@ function removeVideo(): void {
   delete media.videoId;
   question.value.media = media.audioId ? media : undefined;
 }
+
+/** „Pridať vysvetľujúcu stránku“: off by default; switching it off asks first when there is content to lose. */
+async function onExplanationToggle(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  if (input.checked) {
+    question.value.explanation = createExplanation();
+    return;
+  }
+  if (hasExplanationContent(question.value.explanation)) {
+    const ok = await confirm.ask({
+      title: sk.editor.removeExplanationTitle,
+      message: sk.editor.removeExplanationMessage,
+      confirmLabel: sk.editor.removeExplanationConfirm,
+      cancelLabel: sk.common.cancel,
+      danger: true,
+    });
+    if (!ok) {
+      input.checked = true;
+      return;
+    }
+  }
+  delete question.value.explanation;
+}
 </script>
 
 <template>
@@ -131,6 +155,21 @@ function removeVideo(): void {
     <NumberEditor v-else-if="question.type === 'number'" :key="question.id" v-model="question" :errors="errors" />
 
     <FieldError :message="errors.type" />
+
+    <section class="qe__explanation">
+      <label class="qe__check">
+        <input type="checkbox" :checked="!!question.explanation" @change="onExplanationToggle" />
+        {{ sk.editor.explanationToggle }}
+      </label>
+      <p class="hint">{{ sk.editor.explanationHint }}</p>
+      <ExplanationEditor
+        v-if="question.explanation"
+        :key="question.id"
+        v-model="question.explanation"
+        :question-id="question.id"
+        :errors="errors"
+      />
+    </section>
 
     <footer class="qe__foot">
       <BaseButton variant="secondary" @click="previewOpen = true">{{ sk.editor.preview }}</BaseButton>
@@ -187,6 +226,29 @@ function removeVideo(): void {
   max-height: calc(var(--h-hotspot-max) / 2);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow);
+}
+
+.qe__explanation {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding-top: var(--s-4);
+  border-top: var(--border-w) solid var(--border);
+}
+
+.qe__check {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: var(--s-6);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+}
+
+.qe__check input {
+  width: var(--s-4);
+  height: var(--s-4);
+  accent-color: var(--primary);
 }
 
 .qe__foot {

@@ -3,6 +3,7 @@ import {
   LIMITS,
   isPage,
   PAGE_TYPE,
+  type Explanation,
   type MediaRef,
   type Page,
   type Question,
@@ -33,6 +34,7 @@ interface Base {
   timeLimit: number;
   points: number;
   media?: MediaRef;
+  explanation?: Explanation;
 }
 
 function build<T extends QuestionType>(type: T, base: Base): QuestionOf<T>;
@@ -80,6 +82,18 @@ function build(type: QuestionType, base: Base): Question {
   }
 }
 
+/** A new, empty explanation (invalid until the host fills in a text, an image, a video or audio). */
+export function createExplanation(): Explanation {
+  return { text: "" };
+}
+
+/** True when removing the explanation would throw away something the host entered. */
+export function hasExplanationContent(explanation: Explanation | undefined): boolean {
+  if (!explanation) return false;
+  const { media } = explanation;
+  return explanation.text.trim() !== "" || !!media?.imageId || !!media?.videoId || !!media?.audioId;
+}
+
 /** A new, empty question of `type` (invalid until the host fills it in). */
 export function createQuestion<T extends QuestionType>(type: T): QuestionOf<T> {
   return build(type, {
@@ -124,8 +138,9 @@ function mediaFor(type: QuestionType, media: MediaRef | undefined): MediaRef | u
 }
 
 /**
- * Changes the type of `question`: prompt, time limit, points and compatible
- * media survive, the type-specific `data` is replaced by fresh defaults.
+ * Changes the type of `question`: prompt, time limit, points, compatible
+ * media and the explanation survive, the type-specific `data` is replaced by
+ * fresh defaults.
  */
 export function changeQuestionType(question: Question, type: QuestionType): Question {
   const media = mediaFor(type, question.media);
@@ -136,6 +151,7 @@ export function changeQuestionType(question: Question, type: QuestionType): Ques
     points: question.points,
   };
   if (media) base.media = media;
+  if (question.explanation) base.explanation = question.explanation;
   return build(type, base);
 }
 

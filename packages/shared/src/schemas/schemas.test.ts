@@ -12,7 +12,13 @@ import {
   quizSettingsSchema,
   type Question,
 } from "./question.js";
-import { gameStateSchema, pageShowEventSchema, playerJoinPayloadSchema, questionStartEventSchema } from "./ws.js";
+import {
+  explanationShowEventSchema,
+  gameStateSchema,
+  pageShowEventSchema,
+  playerJoinPayloadSchema,
+  questionStartEventSchema,
+} from "./ws.js";
 
 const ID = (n: number) => `7f0b6c1e-3c1a-4c55-9a43-0d6f8f6d2a${String(n).padStart(2, "0")}`;
 const base = { id: ID(1), prompt: "Otázka?", timeLimit: 30, points: 1 };
@@ -237,6 +243,51 @@ describe("pages", () => {
   });
 });
 
+describe("explanation", () => {
+  const withExplanation = (explanation: unknown) => ({ ...single, explanation });
+
+  it("is optional and accepts a text, an image, a video or an audio clip alone, or text + image + audio", () => {
+    expect(ok(single)).toBe(true);
+    expect(ok(withExplanation({ text: "Pretože 2 + 2 = 4." }))).toBe(true);
+    expect(ok(withExplanation({ text: "", media: { imageId: ID(2) } }))).toBe(true);
+    expect(ok(withExplanation({ text: "", media: { videoId: ID(4) } }))).toBe(true);
+    expect(ok(withExplanation({ text: "", media: { audioId: ID(3) }, clip: { start: 0, duration: 15 } }))).toBe(true);
+    expect(
+      ok(withExplanation({ text: "Text", media: { imageId: ID(2), audioId: ID(3) }, clip: { start: 0, duration: 15 } })),
+    ).toBe(true);
+  });
+
+  it("needs some content and respects the text limit", () => {
+    expect(ok(withExplanation({ text: "" }))).toBe(false);
+    // Whitespace only is empty.
+    expect(ok(withExplanation({ text: " \n ", media: {} }))).toBe(false);
+    expect(ok(withExplanation({ text: "x".repeat(1000) }))).toBe(true);
+    expect(ok(withExplanation({ text: "x".repeat(1001) }))).toBe(false);
+    expect(parse(withExplanation({ text: "  Pretože.  " })).explanation?.text).toBe("Pretože.");
+  });
+
+  it("has an image or a video, no audio together with a video, and a clip exactly with audio", () => {
+    expect(ok(withExplanation({ text: "", media: { imageId: ID(2), videoId: ID(4) } }))).toBe(false);
+    expect(ok(withExplanation({ text: "", media: { videoId: ID(4), audioId: ID(3) }, clip: { start: 0, duration: 15 } }))).toBe(
+      false,
+    );
+    expect(ok(withExplanation({ text: "", media: { audioId: ID(3) } }))).toBe(false);
+    expect(ok(withExplanation({ text: "Text", clip: { start: 0, duration: 15 } }))).toBe(false);
+    expect(ok(withExplanation({ text: "", media: { audioId: ID(3) }, clip: { start: 0, duration: 0 } }))).toBe(false);
+  });
+
+  it("explanation:show strips unknown keys", () => {
+    const event = { index: 0, number: 1, prompt: "Otázka?", text: "Pretože.", media: { imageId: ID(2), leak: true }, correctId: "x" };
+    expect(explanationShowEventSchema.parse(event)).toEqual({
+      index: 0,
+      number: 1,
+      prompt: "Otázka?",
+      text: "Pretože.",
+      media: { imageId: ID(2) },
+    });
+  });
+});
+
 describe("parseAnswerPayload", () => {
   it("single: option must belong to the question", () => {
     const q = parse(single);
@@ -425,6 +476,7 @@ describe("gameStateSchema", () => {
       serverNow: 1,
       question: null,
       page: null,
+      explanation: null,
       leaderboard: null,
       finished: null,
       playerId: ID(4),

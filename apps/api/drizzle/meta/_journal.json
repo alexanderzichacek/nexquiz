@@ -43,6 +43,13 @@
       "when": 1791886129783,
       "tag": "0005_question_number",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792068693126,
+      "tag": "0006_question_explanation",
+      "breakpoints": true
     }
   ]
 }

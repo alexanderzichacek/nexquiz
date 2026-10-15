@@ -42,6 +42,23 @@ describe("validateQuiz", () => {
     expect(validateQuiz(quizWith([q]))).toEqual({ valid: true, quiz: {}, questions: {} });
   });
 
+  it("an explanation needs a text or media and shows its errors inline", () => {
+    const q = createQuestion("text");
+    q.prompt = "Najvyšší štít Tatier?";
+    q.data.fields[0].accepted = ["Gerlach"];
+    q.explanation = { text: "" };
+    expect(validateQuiz(quizWith([q])).questions[q.id]).toEqual({ "explanation.content": sk.editorErrors.explanationContent });
+
+    q.explanation = { text: "x".repeat(1001) };
+    expect(validateQuiz(quizWith([q])).questions[q.id]).toEqual({ "explanation.text": sk.editorErrors.explanationText });
+
+    q.explanation = { text: "", media: { audioId: "22222222-2222-4222-8222-222222222222" }, clip: { start: 0, duration: 0 } };
+    expect(validateQuiz(quizWith([q])).questions[q.id]).toEqual({ "explanation.clip.duration": sk.editorErrors.clipDuration });
+
+    q.explanation = { text: "Gerlach má 2655 m.", media: { imageId: "7f0b6c1e-3c1a-4c55-9a43-0d6f8f6d2a01" } };
+    expect(validateQuiz(quizWith([q]))).toEqual({ valid: true, quiz: {}, questions: {} });
+  });
+
   it("a page needs a title, a description or an image", () => {
     const page = createPage();
     const empty = validateQuiz(quizWith([page]));

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   connectedCount,
   fromHostState,
+  onExplanationShow,
   onFinished,
   onLeaderboard,
   onLobbyPlayers,
@@ -30,6 +31,7 @@ function lobby(): HostGameState {
     players: [{ id: P1, nickname: "Jano", avatar: DEFAULT_AVATAR, connected: true }],
     question: null,
     page: null,
+    explanation: null,
     progress: null,
     reveal: null,
     leaderboard: null,
@@ -108,6 +110,23 @@ describe("hostState", () => {
     expect(v).toMatchObject({ state: "QUESTION", currentIndex: 2, page: null });
     v = onPageShow(v, { index: 3, title: "", description: "", media: { imageId: "img" } });
     expect(onFinished(v, { podium: [], ranking: [] }).page).toBeNull();
+  });
+
+  it("shows the explanation after the reveal and leaves it with the leaderboard or the next question", () => {
+    let v = onQuestionStart(fromHostState(lobby()), question);
+    v = onReveal(onQuestionEnd(v, { index: 0 }), {
+      index: 0,
+      correct: { type: "single", correctId: "b" },
+      stats: { type: "single", votes: [] },
+    });
+    const explanation = { index: 0, number: 1, prompt: question.prompt, text: "Canberra je kompromis.", media: {} };
+    v = onExplanationShow(v, explanation);
+    expect(v).toMatchObject({ state: "EXPLANATION", currentIndex: 0, explanation, reveal: null, leaderboard: null });
+
+    expect(onLeaderboard(v, { index: 0, number: 1, top: [] }).state).toBe("LEADERBOARD");
+    v = onQuestionStart(v, { ...question, index: 1, number: 2 });
+    expect(v).toMatchObject({ state: "QUESTION", explanation: null });
+    expect(onFinished(onExplanationShow(v, { ...explanation, index: 1 }), { podium: [], ranking: [] }).explanation).toBeNull();
   });
 
   it("ignores progress outside QUESTION and stale question:end / reveal", () => {

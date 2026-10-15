@@ -1,4 +1,5 @@
 import type {
+  ExplanationShowEvent,
   GameFinishedEvent,
   HostGameState,
   LeaderboardEvent,
@@ -37,6 +38,7 @@ export function onQuestionStart(v: HostView, e: QuestionStartEvent, localNow: nu
     total: e.total,
     question: e,
     page: null,
+    explanation: null,
     progress: null,
     reveal: null,
     leaderboard: null,
@@ -46,7 +48,22 @@ export function onQuestionStart(v: HostView, e: QuestionStartEvent, localNow: nu
 
 /** `page:show` – a page between questions (no timer, no answers). */
 export function onPageShow(v: HostView, e: PageShowEvent): HostView {
-  return { ...v, state: "PAGE", currentIndex: e.index, question: null, page: e, progress: null, reveal: null, leaderboard: null };
+  return {
+    ...v,
+    state: "PAGE",
+    currentIndex: e.index,
+    question: null,
+    page: e,
+    explanation: null,
+    progress: null,
+    reveal: null,
+    leaderboard: null,
+  };
+}
+
+/** `explanation:show` – the explanation of the revealed question (no timer, no answers). */
+export function onExplanationShow(v: HostView, e: ExplanationShowEvent): HostView {
+  return { ...v, state: "EXPLANATION", currentIndex: e.index, explanation: e, reveal: null, leaderboard: null };
 }
 
 export function onProgress(v: HostView, e: QuestionProgressEvent): HostView {
@@ -69,7 +86,17 @@ export function onLeaderboard(v: HostView, e: LeaderboardEvent): HostView {
 }
 
 export function onFinished(v: HostView, e: GameFinishedEvent): HostView {
-  return { ...v, state: "FINISHED", question: null, page: null, progress: null, reveal: null, leaderboard: null, finished: e };
+  return {
+    ...v,
+    state: "FINISHED",
+    question: null,
+    page: null,
+    explanation: null,
+    progress: null,
+    reveal: null,
+    leaderboard: null,
+    finished: e,
+  };
 }
 
 /** Players currently connected (used for the lobby count and the start button). */

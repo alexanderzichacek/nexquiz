@@ -50,6 +50,13 @@ const MESSAGES: Record<string, string> = {
   "data.tolerance": sk.editorErrors.numberTolerance,
   "data.clip.start": sk.editorErrors.clipStart,
   "data.clip.duration": sk.editorErrors.clipDuration,
+  "explanation.content": sk.editorErrors.explanationContent,
+  "explanation.text": sk.editorErrors.explanationText,
+  "explanation.media.imageId": sk.editorErrors.image,
+  "explanation.media.videoId": sk.editorErrors.explanationVideo,
+  "explanation.media.audioId": sk.editorErrors.audio,
+  "explanation.clip.start": sk.editorErrors.clipStart,
+  "explanation.clip.duration": sk.editorErrors.clipDuration,
 };
 
 /**

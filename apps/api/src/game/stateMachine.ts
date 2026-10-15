@@ -5,7 +5,8 @@ import { AppError } from "../errors.js";
 export const TRANSITIONS: Readonly<Record<GameStateName, readonly GameStateName[]>> = {
   LOBBY: ["QUESTION", "PAGE", "FINISHED"],
   QUESTION: ["REVEAL", "FINISHED"],
-  REVEAL: ["LEADERBOARD", "QUESTION", "PAGE", "FINISHED"],
+  REVEAL: ["EXPLANATION", "LEADERBOARD", "QUESTION", "PAGE", "FINISHED"],
+  EXPLANATION: ["LEADERBOARD", "QUESTION", "PAGE", "FINISHED"],
   LEADERBOARD: ["QUESTION", "PAGE", "FINISHED"],
   PAGE: ["QUESTION", "PAGE", "FINISHED"],
   FINISHED: [],
